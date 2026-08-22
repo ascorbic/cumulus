@@ -66,6 +66,14 @@ Changing `MODE` on a running deployment must be followed by
 `POST /admin/purge/all`: entries cached under the old mode are served
 without running the Worker.
 
+## Front page
+
+`GET /` serves [`index.html`](index.html) from the repository root — a
+plain page saying what the service is, with an abuse contact pointing at
+Bluesky support. Edit it to add your own operator contact, terms or
+branding; it is bundled into the Worker at build time and cached for an
+hour (a deploy purges it via the version tag).
+
 ## API
 
 Open mode:

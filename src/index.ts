@@ -1,3 +1,4 @@
+import indexHtml from "../index.html?raw";
 import { handleAdmin } from "./admin.ts";
 import { fetchBlob, sha256 } from "./blob.ts";
 import { decodeBlobCid, digestsEqual } from "./cid.ts";
@@ -255,6 +256,19 @@ export default {
 
 		if (url.pathname === "/healthz") {
 			return errorResponse({ status: 200, cacheControl: CACHE_CONTROL.noStore, message: "ok" });
+		}
+
+		if (url.pathname === "/") {
+			const response = new Response(indexHtml, {
+				headers: {
+					"content-type": "text/html; charset=utf-8",
+					"cache-control": "public, max-age=3600",
+					"cache-tag": versionTag(env),
+					"content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
+					"x-content-type-options": "nosniff",
+				},
+			});
+			return request.method === "HEAD" ? withoutBody(response) : response;
 		}
 
 		const config = loadConfig(env);

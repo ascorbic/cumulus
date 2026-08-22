@@ -235,7 +235,6 @@ describe("routing", () => {
 	it("returns 404 for unknown routes", async () => {
 		useFetch({});
 		for (const path of [
-			"/",
 			"/favicon.ico",
 			`/${DID}`,
 			`/xrpc/com.atproto.sync.getBlob?did=${DID}&cid=${cid}`,
@@ -252,6 +251,16 @@ describe("routing", () => {
 		expect(response.status).toBe(405);
 		expect(response.headers.get("cache-control")).toBe("no-store");
 		expect(response.headers.get("allow")).toBe("GET, HEAD");
+	});
+
+	it("serves the editable index page at /", async () => {
+		useFetch({});
+		const response = await get("/");
+		expect(response.status).toBe(200);
+		expect(response.headers.get("content-type")).toBe("text/html; charset=utf-8");
+		expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+		expect(response.headers.get("cache-tag")).toBe(version);
+		expect(await response.text()).toContain("ATProto blob proxy");
 	});
 
 	it("serves an uncacheable health check", async () => {
