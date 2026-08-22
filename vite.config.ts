@@ -37,7 +37,7 @@ export default defineConfig({
 			".cloudflare/**",
 			".wrangler/**",
 			"dist/**",
-			"docs/**",
+			".claude/docs/**",
 			"worker-configuration.d.ts",
 		],
 	},

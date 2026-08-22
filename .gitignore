@@ -26,3 +26,6 @@ pnpm-debug.log*
 
 # jetbrains setting folder
 .idea/
+
+# example settings file is tracked
+!.env.example

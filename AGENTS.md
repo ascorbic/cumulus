@@ -1,128 +1,143 @@
 # Cumulus
 
-This file provides guidance to agentic coding tools when working with code in this repository.
+Guidance for agentic coding tools working in this repository. The README is
+the user-facing documentation; this file is about how the code is built and
+what must not break.
 
-ATProto blob proxy on Cloudflare Workers using **Workers Cache** (the new
-`cache.enabled` platform feature, GA July 2026). Single Worker, three
-entrypoints, no storage beyond one KV namespace.
+Cumulus is an ATProto blob proxy on Cloudflare Workers using **Workers
+Cache** (`cache.enabled`, GA July 2026) as its only caching layer. All eight
+phases of the original spec are implemented and deployed. The spec and the
+per-phase plans with measured results live in `.claude/docs/` — consult
+`.claude/docs/SPEC.md` for design rationale and `.claude/docs/plans/` for
+what was verified on the platform and what was found along the way.
 
-**docs/SPEC.md is the source of truth.** Read it before planning any phase.
-Where this file and the spec disagree, the spec wins; flag the conflict.
+## Before touching cache-related code
 
-## Before writing any cache-related code
+Workers Cache, the Images binding, the `cf` CLI and the experimental
+`cloudflare.config.ts` format are all newer than most training data. Read
+the current docs rather than writing from memory:
 
-Workers Cache is NEWER THAN YOUR TRAINING DATA. Do not write cache code from
-memory. Fetch these first (or use the Cloudflare docs MCP if available):
+- https://developers.cloudflare.com/workers/cache/ (+ `configuration/`,
+  `cache-keys/`, `purge/`, `limitations/`)
+- https://developers.cloudflare.com/images/transform-images/bindings/
 
-- https://developers.cloudflare.com/workers/cache/
-- https://developers.cloudflare.com/workers/cache/configuration/
-- https://developers.cloudflare.com/workers/cache/cache-keys/
-- https://developers.cloudflare.com/workers/cache/purge/
-- https://developers.cloudflare.com/workers/cache/limitations/
-
-Specifically: this project does NOT use `caches.default` / the CacheStorage
-API anywhere. If you find yourself writing `caches.default.put(...)`, stop —
-that is the old colo-local API and its presence is a bug.
+This project does **not** use `caches.default` / the CacheStorage API
+anywhere. `caches.default.put(...)` is the old colo-local API; its presence
+is a bug.
 
 ## Invariants (violating any of these is a bug, not a style choice)
 
-1. **Every response sets explicit `Cache-Control`.** No exceptions — errors,
-   redirects, health checks. Heuristic caching silently caches bare responses.
-   The full status → Cache-Control taxonomy is in SPEC.md §5.
-2. **Never return `206`.** The platform slices ranges from stored 200s; a
-   Worker-produced 206 is discarded as uncacheable. Ignore Range headers.
+1. **Every response sets explicit `Cache-Control`** — errors, redirects,
+   health checks, admin. Heuristic caching silently caches bare responses.
+   Use the `CACHE_CONTROL` constants in `src/response.ts`.
+2. **Never return `206`.** The platform slices ranges from stored 200s;
+   the 200 must carry `Accept-Ranges: bytes` or slicing does not happen.
 3. **Verify before serving.** Blob bytes are buffered and SHA-256-checked
-   against the CID before any byte reaches the client or cache. No streaming
-   passthrough of unverified content.
-4. **No query-string routes.** Path-only. Param order fragments cache keys.
+   against the CID before any byte reaches the client or cache.
+4. **No query-string routes.** Path-only; param order fragments cache keys.
 5. **Tag everything cacheable** — including 403s and 404s — with
-   `did:{did}` / `cid:{cid}` (lowercased) per SPEC.md §5. Untagged deny
-   responses cannot be purged and will strand takedowns.
-6. **Purges fan out per entrypoint** via `purgeTags` RPC methods (SPEC.md §7).
-   A purge from `default` does not touch `Policy`'s cache.
-7. **Content-Type comes from magic-byte sniffing**, never from the PDS's
-   declared type. `image/svg+xml` stays off the allowlist.
-8. **No Durable Objects, Workflows, or Queues.** The label drain is a cron +
-   cursor (SPEC.md §7a). If a problem seems to need orchestration, re-read
-   §7a's durability argument before adding infrastructure.
-9. **The `/img/` transform route derives from the verified original via
-   loopback** (SPEC.md §8a) — never fetch the PDS directly from the transform
-   path, and never accept free-form resize parameters. Presets are the fixed
-   Bluesky-compatible four; verify the Images binding API against current docs
-   before use (it is also newer than your training data).
-10. **Scoped mode admission is a forward `getRecord` membership check**
-    (SPEC.md §8b): the requested cid must be among the record's blob refs, and
-    the collection must match the allowlist. Never build a reverse index of
-    blob references — the `rec:` tags plus the Jetstream drain ARE the
-    backlink index. Open and scoped routes never coexist in one deployment.
+   `did:{did}` / `cid:{cid}` (lowercased) plus `v:{versionId}`; scoped
+   responses add `rec:{did}/{collection}/{rkey}`; 413/415 add
+   `cfg:{hash}`. Untagged deny responses cannot be purged.
+6. **Purges fan out per entrypoint** via the `purgeTags`/`purgeEverything`
+   RPC methods on `Identity`, `Policy` and `Record`. A purge from `default`
+   does not touch another entrypoint's cache. Every `purge()` call counts
+   against the (Free-tier) purge rate limit separately.
+7. **Content-Type comes from magic-byte sniffing** (`src/sniff.ts`), never
+   from the PDS. `image/svg+xml` stays off the allowlist.
+8. **No Durable Objects, Workflows or Queues.** Drains are cron + KV cursor;
+   overlapping drains are idempotent. Outbound websockets live only for
+   the duration of a drain.
+9. **Derived responses (`/metadata`, `/img/`) obtain the original via
+   `ctx.exports.default.fetch()` loopback**, never by fetching the PDS
+   themselves. Presets are the fixed Bluesky four; no free-form parameters.
+10. **Scoped-mode admission is a forward `getRecord` membership check**
+    through the `Record` entrypoint; never build a reverse index of blob
+    references. Open and scoped routes never coexist in one deployment.
+11. **Config values come from `loadConfig(env)`** in `src/config.ts`;
+    every setting has a default in `CONFIG_DEFAULTS` and a matching text
+    binding in `cloudflare.config.ts`. Adding a setting means touching
+    both plus the README table.
 
-## Stack
+## Layout
 
-- **Start from the `ascorbic/worker-template` template repo** and follow its
-  AGENTS.md setup steps before anything else. It provides the toolchain:
-  Vite+ (`vp`) for dev/build/test/lint, the `cf` CLI for deploys,
-  `@cloudflare/vite-plugin` with `cloudflare.config.ts`,
-  `@cloudflare/vitest-plugin` (tests run inside workerd), TypeScript strict,
-  pnpm. Use the template's commands (`pnpm dev/test/check/deploy`); do not
-  introduce wrangler-based workflows alongside it.
-- Worker config lives in `cloudflare.config.ts`. The `cache`, `exports` and
-  `cross_version_cache` keys from SPEC.md §3 are required — if the config
-  format doesn't yet surface them, fall back to wrangler.jsonc for those keys
-  and say so; never silently drop them.
-- No web framework — the router is a handful of routes; hand-roll it.
-- Deployed integration tests assert `Cf-Cache-Status` transitions
-  (MISS → HIT, purge → MISS).
-- Minimal deps. A CID/multiformats decoder and a magic-bytes table are the
-  only candidates; justify anything else.
-
-## Working method
-
-- Implement in the phase order of SPEC.md §12. One phase at a time; plan
-  first, get approval, then code. Tests green before the next phase.
-- Phase 2 is a measurement gate, not a coding task: it produces real numbers
-  (DigestStream CPU on Free plan) that set `BLOB_MAX_SIZE` defaults. Build
-  the harness, then stop and ask for deploy + results.
-- When a platform behaviour is ambiguous (billing of native crypto, purge
-  propagation timing), say so and propose an experiment — do not guess and
-  bake the guess into defaults.
-
-## Repository Structure
-
-A standalone Cloudflare Worker built with Vite+ and the Cloudflare Vite plugin.
-
-- `src/index.ts` — the Worker entrypoint
-- `test/` — Vitest tests, run inside workerd via `@cloudflare/vitest-plugin`
-- `cloudflare.config.ts` — Worker configuration (the experimental `cf`-CLI-native format; there is no wrangler.jsonc)
-- `compatibility.ts` — compatibility date/flags, shared between the Worker config and the test runtime
-- `vite.config.ts` — unified Vite+ config: Vite plugins, Vitest, oxlint, and oxfmt
-- `worker-configuration.d.ts` — generated types; committed. Regenerated automatically while `pnpm dev` runs
+```
+src/index.ts              router for the default entrypoint; exports Identity, Policy, Record; scheduled()
+src/entrypoints/          Identity (DID → PDS / labeler endpoint), Policy (verdicts), Record (getRecord + blob refs)
+src/blob.ts               PDS fetch, buffering with the size cap, sha256
+src/cid.ts                base32 + CIDv1/raw/sha2-256 decode; no multiformats dependency
+src/sniff.ts dimensions.ts  magic bytes and header-only dimension parsing for the five formats
+src/path.ts scoped.ts img.ts  path parsing and canonicalisation; aliases 301 to one canonical URL
+src/response.ts           header contract, tag helpers, purge helpers (ctx.cache may be absent locally)
+src/admin.ts              Basic-auth admin routes
+src/labels.ts drain.ts    labeler config, queryLabels client, subscribeLabels drain (DAG-CBOR via src/cbor.ts)
+src/jetstream.ts socket.ts  Jetstream drain; shared outbound-websocket reader
+src/store.ts              the only KV schema: cursors, drain status, record-level deny set
+src/config.ts             CONFIG_DEFAULTS and loadConfig
+cloudflare.config.ts      bindings, exports (per-entrypoint cache), cron; text bindings read process.env at deploy
+test/                     vitest inside workerd; test/integration/ runs on Node against the deployed Worker
+```
 
 ## Commands
 
-- `pnpm dev` — start the dev server (`vp dev`; `cf dev` also works and delegates to it)
-- `pnpm test` — run tests in the Workers runtime
-- `pnpm test:deployed` — HTTP suite against the deployed Worker (needs `ADMIN_PASSWORD` in the environment; `set -a; source .env; set +a` first)
-- `pnpm check` — format check, lint, and type check in one pass (`vp check`)
-- `pnpm fix` — apply formatting and safe lint fixes
-- `pnpm build` — production build
-- `pnpm run deploy` — build and deploy (`cf deploy`; requires `cf auth login` or `CLOUDFLARE_API_TOKEN`). Production deploys normally happen via Workers Builds on push to main, not from CI or local machines
+- `pnpm dev` — local dev server (real PLC/PDS, local cache semantics)
+- `pnpm test` — workerd suite; `pnpm test:deployed` — HTTP suite against
+  production (`set -a; source .env; set +a` first; it purges, so run it
+  sparingly — the purge rate limit bites after a few runs)
+- `pnpm check` / `pnpm fix` — oxfmt + oxlint + types
+- `pnpm run deploy` — `cf deploy` (plain `pnpm deploy` is a pnpm builtin).
+  Source `.env` first; it supplies the text-binding values.
 
-## Configuration Architecture
+## Testing notes
 
-- **`cloudflare.config.ts` is the source of truth for the Worker**: name, entrypoint, compatibility, bindings, observability. It uses the experimental new config format (`experimental.newConfig` in the Vite plugin), which both the `cf` CLI and plain `vp`/Vite commands read. `defineWorker` is imported from `@cloudflare/vite-plugin/experimental-config` — do not import it from `@cloudflare/config` directly, or the generated types stop resolving (the two packages carry different unique symbols).
-- The entrypoint uses the `with { type: "cf-worker" }` import attribute. This is what makes `Env` and `exports` inference work — keep that form when changing the entrypoint.
-- **Bindings**: declare them in `cloudflare.config.ts` (e.g. `env: { MY_KV: bindings.kv() }` with `bindings` from the same import). The `Env` type in `worker-configuration.d.ts` is inferred from them — run `pnpm dev` briefly after config changes to regenerate it, and commit the result.
-- **`compatibility.ts`** exists so the Vitest runtime (`cloudflareTest` in vite.config.ts) always matches the deployed runtime. Extra exports are not allowed in `cloudflare.config.ts` (its exports are schema-validated), which is why this is a separate file.
-- **Version pins that must move together**: the `vitest` devDependency and the `vitest` override in `pnpm-workspace.yaml` are pinned to the version bundled by vite-plus (check with `pnpm exec vp toolchain`). `vite` is aliased to `@voidzero-dev/vite-plus-core` (as a devDependency and an override) so every package resolves the same Vite — do not add a real `vite` dependency.
+- Tests import `env`/`exports` from `cloudflare:workers`; `exports.default.fetch()`
+  drives the router and `ctx.exports` loopbacks work in workerd.
+- `@cloudflare/vitest-plugin` 1.0 has no `fetchMock`; stub outbound calls
+  with `vi.spyOn(globalThis, "fetch")` and `stubFetch()` from `test/helpers.ts`
+  (routes by hostname, throws on anything unstubbed).
+- Pass `redirect: "manual"` when asserting 301s — the loopback follows
+  redirects by default.
+- `ctx.cache` is absent in miniflare; purge helpers return a
+  `success: false` result there, so purge tests assert shape and fan-out,
+  and real purges are covered by `test/integration/`.
+- Websocket servers in tests: `new WebSocketPair()`, `server.accept()`,
+  send, return `new Response(null, { status: 101, webSocket: client })`.
+  Binary frames arrive as `Blob`.
+- The Images binding is remote-only; tests install a fake on `env.IMAGES`.
+- `vi.spyOn` cannot replace ES-module exports across workerd module
+  boundaries; inject behaviour (e.g. the drain's `purge` option) instead.
 
-## Testing
+## Platform behaviour verified in production (see `.claude/docs/plans/`)
 
-- Tests run inside workerd. Import test APIs from `cloudflare:workers` (`env`, `exports`) — `exports.default.fetch()` replaces the deprecated `SELF`, and `env` from `cloudflare:test` is also deprecated.
-- `test/env.d.ts` wires the `ProvidedEnv` type to the generated `Env`.
-- For integration tests against the production build, use `createTestHarness()` from `wrangler` pointed at the built output (`dist/<worker_name>/wrangler.json` after `pnpm build`).
+- Cache key = entrypoint + path + query; GET/HEAD share an entry; Range is
+  sliced from the stored 200 only with `Accept-Ranges: bytes`.
+- `cloudflare-cdn-cache-control` is honoured and stripped; `cache-tag` is
+  stripped; `no-store` shows as `BYPASS`.
+- `crossVersionCache: true` keeps entries across deploys; purge `v:{id}`
+  after a header-changing deploy. Entries also survive a `MODE` switch —
+  purge all afterwards.
+- Native SHA-256 bills ≈1.2 ms CPU per MB; hence the 3 MB Free-plan default.
+- `bindings.kv()` without an id auto-provisions on deploy; declared secrets
+  must exist before `cf deploy` accepts the upload.
+- Workers cannot `fetch("wss://…")`; `src/socket.ts` rewrites to https and
+  sends the upgrade header.
+- `anim: true` is only valid for webp output on the Images binding.
 
-## Development Workflow
+## Configuration architecture
 
-- Uses **pnpm**, wrapped by **Vite+** (`vp`). Format and lint are oxfmt/oxlint via `vp check` — there is no prettier or eslint. Type checking runs inside `vp check` (tsgolint with `typeAware`/`typeCheck` enabled).
-- Formatting uses tabs (configured in `vite.config.ts` under `fmt`).
-- CI (test.yml) runs `vp check`, `vp test`, and `vp build` via the `voidzero-dev/setup-vp` action.
+- `cloudflare.config.ts` uses the experimental config format via
+  `defineWorker` from `@cloudflare/vite-plugin/experimental-config` (not
+  `@cloudflare/config` — different unique symbols break type inference).
+  `Env` is inferred from it; there is no generated vars list to regenerate.
+- The entrypoint import uses `with { type: "cf-worker" }`; keep that form.
+- `compatibility.ts` is shared with the vitest runtime so tests match
+  production.
+- `vite` must stay aliased to `@voidzero-dev/vite-plus-core` and the
+  `vitest` pin must match vite-plus (`pnpm exec vp toolchain`).
+- Formatting uses tabs; `.claude/docs/**` is excluded from formatting.
+
+## Not implemented
+
+- Label signature verification (labels are trusted over transport).
+- A streaming mode for blobs larger than the isolate can buffer.
+- Multi-region PDS failover.
