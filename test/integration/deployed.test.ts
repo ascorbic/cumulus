@@ -1,4 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
+import { decodeCborSequence } from "../../src/cbor.ts";
 
 /**
  * Runs against a deployed Worker (Node runner, HTTP only):
@@ -47,6 +48,45 @@ async function expectMissAfter(label: string, path: string): Promise<Response> {
 		}
 		await new Promise((resolve) => setTimeout(resolve, 100));
 	}
+}
+
+const LABELER_DID = "did:plc:ar7c4by46qjdydhdevvrndac";
+const LABELER_WS = "wss://mod.bsky.app/xrpc/com.atproto.label.subscribeLabels";
+
+/** Finds an account Bluesky's moderation service has recently taken down. */
+async function recentTakedown(): Promise<string | undefined> {
+	const status = await get("/admin/labels/status", { headers: auth });
+	const { labelers } = (await status.json()) as {
+		labelers: Array<{ did: string; cursor: number | null }>;
+	};
+	const cursor = labelers.find((l) => l.did === LABELER_DID)?.cursor;
+	if (!cursor) return undefined;
+	return new Promise((resolve) => {
+		const ws = new WebSocket(`${LABELER_WS}?cursor=${Math.max(0, cursor - 20_000)}`);
+		ws.binaryType = "arraybuffer";
+		const finish = (did?: string) => {
+			ws.close();
+			resolve(did);
+		};
+		const timer = setTimeout(() => finish(), 20_000);
+		ws.addEventListener("message", (event) => {
+			const [header, body] = decodeCborSequence(new Uint8Array(event.data as ArrayBuffer)) as Array<
+				Record<string, unknown>
+			>;
+			if (header?.t !== "#labels") return;
+			for (const label of (body?.labels as Array<Record<string, unknown>>) ?? []) {
+				if (label.val === "!takedown" && !label.neg && String(label.uri).startsWith("did:")) {
+					clearTimeout(timer);
+					finish(String(label.uri));
+					return;
+				}
+			}
+		});
+		ws.addEventListener("error", () => {
+			clearTimeout(timer);
+			finish();
+		});
+	});
 }
 
 describe.skipIf(!PASSWORD)("deployed cumulus", () => {
@@ -147,5 +187,18 @@ describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 		expect(body.width).toBeGreaterThan(0);
 		expect(status(await get(`/metadata/${DID}/${CID}`))).toBe("HIT");
 		expect(status(await get(`/${DID}/${CID}`))).toBe("HIT");
+	});
+
+	it("denies blobs of an account the Bluesky moderation service has taken down", async () => {
+		const did = await recentTakedown();
+		if (!did) {
+			console.log("no recent !takedown found on the label stream; skipping");
+			return;
+		}
+		const response = await get(`/${did}/${MISSING_CID}`);
+		expect(response.status, did).toBe(403);
+		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
+		const control = await get(`/${DID}/${MISSING_CID}`);
+		expect(control.status).toBe(404);
 	});
 });
