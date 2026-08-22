@@ -17,8 +17,8 @@ that propagate globally within seconds.
 
 ## Setup
 
-Requirements: Node 22+, pnpm, a Cloudflare account. Workers Cache, Images
-and the `cf` CLI are all in technical preview at the time of writing.
+Requirements: Node 22+, pnpm, a Cloudflare account. The `cf` CLI is in
+technical preview at the time of writing.
 
 ```sh
 git clone https://github.com/ascorbic/cumulus
