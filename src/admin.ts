@@ -1,5 +1,7 @@
 import { CID_PATTERN } from "./cid.ts";
 import { configHash, loadConfig } from "./config.ts";
+import { drain } from "./drain.ts";
+import { readCursor, readStatus } from "./store.ts";
 import { isValidDid } from "./path.ts";
 import {
 	CACHE_CONTROL,
@@ -136,6 +138,22 @@ async function handleConfig(env: Env): Promise<Response> {
 	);
 }
 
+async function handleLabelsStatus(env: Env): Promise<Response> {
+	const labelers = await Promise.all(
+		loadConfig(env).labelers.map(async (labeler) => ({
+			did: labeler.did,
+			vals: labeler.vals,
+			cursor: await readCursor(env.LABELS_KV, labeler.did),
+			status: await readStatus(env.LABELS_KV, labeler.did),
+		})),
+	);
+	return jsonResponse({ labelers }, { cacheControl: CACHE_CONTROL.noStore });
+}
+
+async function handleLabelsDrain(env: Env, ctx: ExecutionContext): Promise<Response> {
+	return jsonResponse({ results: await drain(env, ctx) }, { cacheControl: CACHE_CONTROL.noStore });
+}
+
 /** `/admin/*`: Basic auth against `ADMIN_PASSWORD`; absent password → 404. */
 export async function handleAdmin(
 	request: Request,
@@ -161,6 +179,17 @@ export async function handleAdmin(
 			if (kind !== undefined) return notFound();
 			if (request.method !== "GET") return methodNotAllowed("GET");
 			return handleConfig(env);
+		case "labels":
+			if (id !== undefined) return notFound();
+			if (kind === "status") {
+				if (request.method !== "GET") return methodNotAllowed("GET");
+				return handleLabelsStatus(env);
+			}
+			if (kind === "drain") {
+				if (request.method !== "POST") return methodNotAllowed("POST");
+				return handleLabelsDrain(env, ctx);
+			}
+			return notFound();
 		default:
 			return notFound();
 	}

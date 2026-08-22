@@ -15,6 +15,7 @@ export default defineConfig({
 						compatibilityDate,
 						compatibilityFlags,
 						versionMetadata: "VERSION",
+						kvNamespaces: ["LABELS_KV"],
 						bindings: { ADMIN_PASSWORD: TEST_ADMIN_PASSWORD },
 					},
 				})

@@ -40,6 +40,30 @@ describe("Identity", () => {
 		expect(response.headers.get("cache-control")).toBe("no-store");
 	});
 
+	it("resolves a labeler service endpoint", async () => {
+		const labeler = "did:plc:ar7c4by46qjdydhdevvrndac";
+		vi.spyOn(globalThis, "fetch").mockImplementation(
+			stubFetch({
+				"plc.directory": () =>
+					Response.json({
+						id: labeler,
+						service: [
+							{
+								id: "#atproto_labeler",
+								type: "AtprotoLabeler",
+								serviceEndpoint: "https://mod.bsky.app",
+							},
+						],
+					}),
+			}),
+		);
+		const response = await exports.Identity.fetch(`http://identity/labeler/${labeler}`);
+		expect(response.status).toBe(200);
+		expect(await response.json()).toEqual({ endpoint: "https://mod.bsky.app" });
+		expect(response.headers.get("cache-tag")).toBe(`did:${labeler},${version}`);
+		expect((await exports.Identity.fetch(`http://identity/did/${labeler}`)).status).toBe(404);
+	});
+
 	it("rejects malformed DIDs without touching the network", async () => {
 		vi.spyOn(globalThis, "fetch").mockImplementation(stubFetch({}));
 		const response = await exports.Identity.fetch("http://identity/did/did:plc:nope");

@@ -1,4 +1,9 @@
-import { bindings, defineWorker, exports } from "@cloudflare/vite-plugin/experimental-config";
+import {
+	bindings,
+	defineWorker,
+	exports,
+	triggers,
+} from "@cloudflare/vite-plugin/experimental-config";
 import { compatibilityDate, compatibilityFlags } from "./compatibility.ts";
 import { CONFIG_DEFAULTS } from "./src/config.ts";
 import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
@@ -27,7 +32,11 @@ export default defineWorker({
 		EDGE_MAX_AGE: bindings.text(CONFIG_DEFAULTS.EDGE_MAX_AGE),
 		POLICY_URL: bindings.text(CONFIG_DEFAULTS.POLICY_URL),
 		POLICY_FAIL_OPEN: bindings.text(CONFIG_DEFAULTS.POLICY_FAIL_OPEN),
+		LABELERS: bindings.text(CONFIG_DEFAULTS.LABELERS),
+		LABELER_FAIL_OPEN: bindings.text(CONFIG_DEFAULTS.LABELER_FAIL_OPEN),
+		LABELS_KV: bindings.kv(),
 	},
+	triggers: [triggers.scheduled({ schedule: "*/5 * * * *" })],
 	observability: {
 		enabled: true,
 	},

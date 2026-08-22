@@ -98,6 +98,19 @@ describe("admin purge", () => {
 		expect((await post("/admin/config")).status).toBe(405);
 	});
 
+	it("reports labeler status", async () => {
+		const response = await exports.default.fetch(
+			new Request(`${ORIGIN}/admin/labels/status`, {
+				headers: { authorization: basic(TEST_ADMIN_PASSWORD) },
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		expect(await response.json()).toEqual({ labelers: [] });
+		expect((await post("/admin/labels/status")).status).toBe(405);
+		expect((await post("/admin/labels/nope")).status).toBe(404);
+	});
+
 	it("purges a version tag on every entrypoint", async () => {
 		const body = (await (
 			await post("/admin/purge/version/9bc2de5a-1a13-472e-b846-af6f00fec3f1")

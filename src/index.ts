@@ -3,6 +3,7 @@ import { fetchBlob, sha256 } from "./blob.ts";
 import { decodeBlobCid, digestsEqual } from "./cid.ts";
 import { configHash, loadConfig, type Config } from "./config.ts";
 import { imageInfo } from "./dimensions.ts";
+import { drain } from "./drain.ts";
 import { parseBlobPath } from "./path.ts";
 import {
 	CACHE_CONTROL,
@@ -279,5 +280,10 @@ export default {
 				break;
 		}
 		return request.method === "HEAD" ? withoutBody(response) : response;
+	},
+
+	async scheduled(_controller, env, ctx): Promise<void> {
+		const results = await drain(env, ctx);
+		console.log(JSON.stringify({ event: "drain", results }));
 	},
 } satisfies ExportedHandler<Env>;

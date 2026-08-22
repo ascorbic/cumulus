@@ -31,21 +31,33 @@ export function didDocumentUrl(did: string, plcUrl: string): string {
 	return `${origin}/${path.map(encodeURIComponent).join("/")}/did.json`;
 }
 
-export function pdsFromDidDocument(did: string, doc: unknown): string | undefined {
+const SERVICES = {
+	pds: { fragment: "#atproto_pds", type: "AtprotoPersonalDataServer" },
+	labeler: { fragment: "#atproto_labeler", type: "AtprotoLabeler" },
+} as const;
+
+export type ServiceKind = keyof typeof SERVICES;
+
+export function serviceFromDidDocument(
+	did: string,
+	doc: unknown,
+	kind: ServiceKind,
+): string | undefined {
 	if (typeof doc !== "object" || doc === null) return undefined;
 	const { id, service } = doc as DidDocument;
 	if (id !== did || !Array.isArray(service)) return undefined;
-	const pds = (service as Service[]).find(
-		(entry) =>
-			typeof entry === "object" &&
-			entry !== null &&
-			(entry.id === "#atproto_pds" || entry.id === `${did}#atproto_pds`) &&
-			entry.type === "AtprotoPersonalDataServer",
+	const { fragment, type } = SERVICES[kind];
+	const entry = (service as Service[]).find(
+		(candidate) =>
+			typeof candidate === "object" &&
+			candidate !== null &&
+			(candidate.id === fragment || candidate.id === `${did}${fragment}`) &&
+			candidate.type === type,
 	);
-	if (!pds || typeof pds.serviceEndpoint !== "string") return undefined;
+	if (!entry || typeof entry.serviceEndpoint !== "string") return undefined;
 	let url: URL;
 	try {
-		url = new URL(pds.serviceEndpoint);
+		url = new URL(entry.serviceEndpoint);
 	} catch {
 		return undefined;
 	}
@@ -54,13 +66,18 @@ export function pdsFromDidDocument(did: string, doc: unknown): string | undefine
 	return url.origin + url.pathname.replace(/\/+$/, "");
 }
 
+export function pdsFromDidDocument(did: string, doc: unknown): string | undefined {
+	return serviceFromDidDocument(did, doc, "pds");
+}
+
 /**
- * Resolves a DID to its PDS origin. Returns undefined when the DID does not
- * exist or its document declares no usable PDS; throws IdentityError when the
- * directory itself fails.
+ * Resolves a DID to one of its service endpoints. Returns undefined when the
+ * DID does not exist or its document declares no usable service of that
+ * kind; throws IdentityError when the directory itself fails.
  */
-export async function resolvePds(
+export async function resolveService(
 	did: string,
+	kind: ServiceKind,
 	options: { plcUrl: string; timeoutMs: number },
 ): Promise<string | undefined> {
 	if (did.startsWith("did:web:")) {
@@ -91,5 +108,12 @@ export async function resolvePds(
 	} catch {
 		return undefined;
 	}
-	return pdsFromDidDocument(did, doc);
+	return serviceFromDidDocument(did, doc, kind);
+}
+
+export function resolvePds(
+	did: string,
+	options: { plcUrl: string; timeoutMs: number },
+): Promise<string | undefined> {
+	return resolveService(did, "pds", options);
 }

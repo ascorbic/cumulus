@@ -1,3 +1,5 @@
+import { parseLabelers, type LabelerConfig } from "./labels.ts";
+
 export interface Config {
 	blobMaxSize: number;
 	allowedMimeTypes: ReadonlySet<string>;
@@ -7,6 +9,8 @@ export interface Config {
 	edgeMaxAge: number;
 	policyUrl: string | undefined;
 	policyFailOpen: boolean;
+	labelers: LabelerConfig[];
+	labelerFailOpen: boolean;
 }
 
 export const CONFIG_DEFAULTS = {
@@ -18,6 +22,8 @@ export const CONFIG_DEFAULTS = {
 	EDGE_MAX_AGE: "31536000",
 	POLICY_URL: "",
 	POLICY_FAIL_OPEN: "false",
+	LABELERS: "",
+	LABELER_FAIL_OPEN: "true",
 } as const;
 
 export type ConfigEnv = Partial<Record<keyof typeof CONFIG_DEFAULTS, string>>;
@@ -83,6 +89,8 @@ export function loadConfig(env: object): Config {
 		edgeMaxAge: parseInteger(configValue(env, "EDGE_MAX_AGE")),
 		policyUrl: policyUrl || undefined,
 		policyFailOpen: parseBoolean(configValue(env, "POLICY_FAIL_OPEN")),
+		labelers: parseLabelers(configValue(env, "LABELERS")),
+		labelerFailOpen: parseBoolean(configValue(env, "LABELER_FAIL_OPEN")),
 	};
 }
 

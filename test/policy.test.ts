@@ -1,5 +1,6 @@
 import { env, exports } from "cloudflare:workers";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { keys } from "../src/store.ts";
 import { DID, stubFetch, type FetchStub } from "./helpers.ts";
 
 const CID = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";
@@ -64,5 +65,101 @@ describe("Policy with POLICY_URL", () => {
 		expect(response.status).toBe(200);
 		expect(await response.json()).toEqual({ allow: true, degraded: true });
 		expect(response.headers.get("cache-control")).toBe("no-store");
+	});
+});
+
+const LABELER = "did:plc:ar7c4by46qjdydhdevvrndac";
+const MOD_HOST = "mod.example";
+
+function labelerDoc(): unknown {
+	return {
+		id: LABELER,
+		service: [
+			{ id: "#atproto_labeler", type: "AtprotoLabeler", serviceEndpoint: `https://${MOD_HOST}` },
+		],
+	};
+}
+
+function withLabeler(labels: FetchStub): void {
+	vi.spyOn(globalThis, "fetch").mockImplementation(
+		stubFetch({ "plc.directory": () => Response.json(labelerDoc()), [MOD_HOST]: labels }),
+	);
+}
+
+describe("Policy with labelers", () => {
+	let restore: () => void;
+	afterEach(async () => {
+		restore?.();
+		vi.restoreAllMocks();
+		await env.LABELS_KV.delete(keys.deny(DID, CID));
+	});
+
+	it("denies on an enforced account label", async () => {
+		restore = withEnv({ LABELERS: JSON.stringify([{ did: LABELER, vals: ["!takedown"] }]) });
+		withLabeler((url) => {
+			expect(url.pathname).toBe("/xrpc/com.atproto.label.queryLabels");
+			expect(url.searchParams.get("uriPatterns")).toBe(DID);
+			expect(url.searchParams.get("sources")).toBe(LABELER);
+			return Response.json({
+				labels: [{ src: LABELER, uri: DID, val: "!takedown", cts: "2026-08-22T00:00:00Z" }],
+			});
+		});
+		const response = await check();
+		expect(await response.json()).toEqual({ allow: false, reason: `${LABELER} !takedown` });
+		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
+	});
+
+	it("allows when only non-enforced or negated labels exist", async () => {
+		restore = withEnv({ LABELERS: JSON.stringify([{ did: LABELER, vals: ["!takedown"] }]) });
+		withLabeler(() =>
+			Response.json({
+				labels: [
+					{ src: LABELER, uri: DID, val: "porn", cts: "2026-08-22T00:00:00Z" },
+					{ src: LABELER, uri: DID, val: "!takedown", neg: true, cts: "2026-08-22T00:00:00Z" },
+				],
+			}),
+		);
+		const response = await check();
+		expect(await response.json()).toEqual({ allow: true });
+		expect(response.headers.get("cache-control")).toBe("public, max-age=3600");
+	});
+
+	it("fails open by default on a labeler outage", async () => {
+		restore = withEnv({ LABELERS: JSON.stringify([{ did: LABELER, vals: ["!takedown"] }]) });
+		withLabeler(() => new Response("down", { status: 503 }));
+		const response = await check();
+		expect(await response.json()).toEqual({ allow: true, degraded: true });
+		expect(response.headers.get("cache-control")).toBe("no-store");
+	});
+
+	it("fails closed when LABELER_FAIL_OPEN=false", async () => {
+		restore = withEnv({
+			LABELERS: JSON.stringify([{ did: LABELER, vals: ["!takedown"] }]),
+			LABELER_FAIL_OPEN: "false",
+		});
+		withLabeler(() => new Response("down", { status: 503 }));
+		const response = await check();
+		expect(response.status).toBe(502);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+	});
+
+	it("denies from the record-level deny set before consulting anything", async () => {
+		restore = withEnv({ LABELERS: JSON.stringify([{ did: LABELER, vals: ["!takedown"] }]) });
+		await env.LABELS_KV.put(
+			keys.deny(DID, CID),
+			JSON.stringify({
+				uri: `at://${DID}/app.bsky.feed.post/3k`,
+				src: LABELER,
+				val: "!takedown",
+				cts: "x",
+			}),
+		);
+		vi.spyOn(globalThis, "fetch").mockImplementation(stubFetch({}));
+		const response = await check();
+		expect(await response.json()).toEqual({
+			allow: false,
+			reason: `${LABELER} !takedown at://${DID}/app.bsky.feed.post/3k`,
+		});
+		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
 	});
 });
