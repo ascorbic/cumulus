@@ -4,6 +4,7 @@ import { decodeBlobCid, digestsEqual } from "./cid.ts";
 import { configHash, loadConfig, type Config } from "./config.ts";
 import { imageInfo } from "./dimensions.ts";
 import { drain } from "./drain.ts";
+import { parseImgPath, serveImg } from "./img.ts";
 import { parseBlobPath } from "./path.ts";
 import {
 	CACHE_CONTROL,
@@ -250,6 +251,34 @@ export default {
 
 		if (url.pathname === "/healthz") {
 			return errorResponse({ status: 200, cacheControl: CACHE_CONTROL.noStore, message: "ok" });
+		}
+
+		if (url.pathname.startsWith("/img/")) {
+			const img = parseImgPath(url.pathname);
+			let response: Response;
+			switch (img.kind) {
+				case "redirect":
+					response = redirectResponse(img.location);
+					break;
+				case "invalid":
+					response = errorResponse({
+						status: 400,
+						cacheControl: CACHE_CONTROL.day,
+						message: "Malformed preset, format, DID or CID",
+					});
+					break;
+				case "unknown":
+					response = errorResponse({
+						status: 404,
+						cacheControl: CACHE_CONTROL.negative,
+						message: "Not found",
+					});
+					break;
+				case "img":
+					response = await serveImg(img, env, ctx, loadConfig(env));
+					break;
+			}
+			return request.method === "HEAD" ? withoutBody(response) : response;
 		}
 
 		const metadata = url.pathname.startsWith("/metadata/");

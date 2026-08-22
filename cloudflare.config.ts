@@ -40,6 +40,7 @@ export default defineWorker({
 		LABELERS: bindings.text(setting("LABELERS")),
 		LABELER_FAIL_OPEN: bindings.text(setting("LABELER_FAIL_OPEN")),
 		LABELS_KV: bindings.kv(),
+		...(process.env.IMAGES_ENABLED === "true" ? { IMAGES: bindings.images() } : {}),
 	},
 	triggers: [triggers.scheduled({ schedule: "*/5 * * * *" })],
 	observability: {
