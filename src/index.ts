@@ -1,4 +1,4 @@
-import indexHtml from "../index.html?raw";
+import indexHtml from "../site/index.html?raw";
 import { handleAdmin } from "./admin.ts";
 import { fetchBlob, sha256 } from "./blob.ts";
 import { decodeBlobCid, digestsEqual } from "./cid.ts";
