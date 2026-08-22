@@ -63,3 +63,25 @@ admin record purge. Deployed check: switch the deployment to scoped mode
 with `SCOPED_COLLECTIONS=app.bsky.actor.profile`, serve the avatar through
 `/r/{did}/app.bsky.actor.profile/self/{cid}`, confirm a non-member cid 403s,
 run the Jetstream drain once, then switch back to open mode.
+
+## Deployed results (2026-08-22, version c6b289fb, then back to open mode at 08ea8d2f)
+
+- Scoped deploy with `MODE=scoped SCOPED_COLLECTIONS=app.bsky.actor.profile
+  JETSTREAM_URL=wss://jetstream2.us-east.bsky.network` (exported in the
+  shell over `.env`).
+- `/r/{did}/app.bsky.actor.profile/self/{avatar}` → `200 MISS` → `HIT`;
+  the banner cid admits too (membership, not equality). A cid the record
+  does not reference → `403 max-age=86400`; a collection outside the
+  allowlist → 403; `/img/avatar/r/…` → webp variant.
+- Drain: labels (2 events) and Jetstream (6 delete/update events across
+  the network's profile collection, 6 `rec:` purges, cursor
+  1787389010119540 µs) in one call.
+- `POST /admin/purge/record/{did}/{collection}/{rkey}` → success on
+  default + Record → next scoped request `MISS`.
+- **Finding:** entries cached under open mode keep serving after a switch
+  to scoped mode — the cache never runs the Worker on a `HIT`, and
+  `crossVersionCache` keeps them across the deploy. Never-cached open paths
+  404 as intended. Switching modes therefore needs `POST /admin/purge/all`
+  after the deploy (done both ways here). Written into SPEC.md §8b.
+- Workers cannot `fetch("wss://…")`; `readSocket` rewrites ws(s) to http(s)
+  for the upgrade request.

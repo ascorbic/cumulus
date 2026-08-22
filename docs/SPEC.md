@@ -242,7 +242,7 @@ The app has the rkey in hand at render time, so the extra segments are free to g
 
 **The design deliberately rejected:** ingesting the firehose into a KV membership set of allowed `(did, cid)` pairs. Storage grows with app history, new posts hit a commit-to-drain consistency gap (false 403s at the worst moment — right after a user posts), and it's a second source of truth. Public backlink indexes don't apply either: Constellation (microcosm.blue) indexes at-uris, DIDs and web URLs as link targets — blob refs are ipld `$link` CIDs, which it does not index, so "which records reference this blob" is structurally unanswerable there; and even a blob-aware index would put a third party with partial backfill on the admission path that the forward `getRecord` check makes unnecessary.
 
-Scoped-mode extras in config: `MODE=open|scoped`, `SCOPED_COLLECTIONS`, `JETSTREAM_URL`. Everything else — verification, headers, purge fan-out, labeller enforcement, presets — behaves identically.
+Scoped-mode extras in config: `MODE=open|scoped`, `SCOPED_COLLECTIONS`, `JETSTREAM_URL`. Everything else — verification, headers, purge fan-out, labeller enforcement, presets — behaves identically. **Switching modes on a live deployment must be followed by `POST /admin/purge/all`**: responses cached under the previous mode are served on `HIT` without running the Worker, and `cross_version_cache` keeps them across the deploy (measured in phase 8).
 
 ## 9. Configuration
 
