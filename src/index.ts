@@ -1,18 +1,62 @@
-import { fetchBlob } from "./blob.ts";
+import { handleAdmin } from "./admin.ts";
+import { fetchBlob, sha256 } from "./blob.ts";
 import { decodeBlobCid, digestsEqual } from "./cid.ts";
 import { loadConfig, type Config } from "./config.ts";
-import { IdentityError, resolvePds } from "./identity.ts";
 import { parseBlobPath } from "./path.ts";
 import {
 	CACHE_CONTROL,
 	blobResponse,
 	blobTags,
+	didTag,
 	errorResponse,
 	redirectResponse,
+	versionTag,
 } from "./response.ts";
 import { sniff } from "./sniff.ts";
 
-async function serveBlob(did: string, cid: string, config: Config): Promise<Response> {
+export { Identity } from "./entrypoints/identity.ts";
+export { Policy } from "./entrypoints/policy.ts";
+
+type Resolution =
+	| { kind: "pds"; pds: string }
+	| { kind: "not-found" }
+	| { kind: "error"; detail: string };
+
+async function resolveIdentity(ctx: ExecutionContext, did: string): Promise<Resolution> {
+	const response = await ctx.exports.Identity.fetch(`http://identity/did/${did}`);
+	if (response.status === 404) return { kind: "not-found" };
+	if (!response.ok)
+		return {
+			kind: "error",
+			detail: `Identity returned ${response.status}: ${await response.text()}`,
+		};
+	const { pds } = (await response.json()) as { pds: string };
+	return { kind: "pds", pds };
+}
+
+type PolicyResult =
+	| { kind: "allow" }
+	| { kind: "deny"; reason?: string }
+	| { kind: "error"; detail: string };
+
+async function checkPolicy(ctx: ExecutionContext, did: string, cid: string): Promise<PolicyResult> {
+	const response = await ctx.exports.Policy.fetch(`http://policy/check/${did}/${cid}`);
+	if (!response.ok)
+		return {
+			kind: "error",
+			detail: `Policy returned ${response.status}: ${await response.text()}`,
+		};
+	const verdict = (await response.json()) as { allow: boolean; reason?: string };
+	return verdict.allow ? { kind: "allow" } : { kind: "deny", reason: verdict.reason };
+}
+
+async function serveBlob(
+	did: string,
+	cid: string,
+	env: Env,
+	ctx: ExecutionContext,
+	config: Config,
+): Promise<Response> {
 	let expectedDigest: Uint8Array;
 	try {
 		expectedDigest = decodeBlobCid(cid);
@@ -23,29 +67,44 @@ async function serveBlob(did: string, cid: string, config: Config): Promise<Resp
 			message: `Unsupported CID: ${(error as Error).message}`,
 		});
 	}
-	const tags = blobTags(did, cid);
+	const version = versionTag(env);
+	const tags = [...blobTags(did, cid), version];
 
-	let pds: string | undefined;
-	try {
-		pds = await resolvePds(did, { plcUrl: config.plcUrl, timeoutMs: config.blobFetchTimeoutMs });
-	} catch (error) {
-		if (!(error instanceof IdentityError)) throw error;
+	const identity = await resolveIdentity(ctx, did);
+	if (identity.kind === "error") {
 		return errorResponse({
 			status: 502,
 			cacheControl: CACHE_CONTROL.noStore,
-			message: error.message,
+			message: identity.detail,
 		});
 	}
-	if (pds === undefined) {
+	if (identity.kind === "not-found") {
 		return errorResponse({
 			status: 404,
 			cacheControl: CACHE_CONTROL.negative,
-			tags: [tags[0]!],
+			tags: [didTag(did), version],
 			message: "DID not found or has no PDS",
 		});
 	}
 
-	const blob = await fetchBlob(pds, did, cid, {
+	const policy = await checkPolicy(ctx, did, cid);
+	if (policy.kind === "error") {
+		return errorResponse({
+			status: 502,
+			cacheControl: CACHE_CONTROL.noStore,
+			message: policy.detail,
+		});
+	}
+	if (policy.kind === "deny") {
+		return errorResponse({
+			status: 403,
+			cacheControl: CACHE_CONTROL.day,
+			tags,
+			message: "Forbidden",
+		});
+	}
+
+	const blob = await fetchBlob(identity.pds, did, cid, {
 		maxSize: config.blobMaxSize,
 		timeoutMs: config.blobFetchTimeoutMs,
 	});
@@ -72,9 +131,15 @@ async function serveBlob(did: string, cid: string, config: Config): Promise<Resp
 			});
 	}
 
-	if (!digestsEqual(blob.digest, expectedDigest)) {
+	if (!digestsEqual(await sha256(blob.bytes), expectedDigest)) {
 		console.error(
-			JSON.stringify({ event: "cid-mismatch", did, cid, pds, bytes: blob.bytes.byteLength }),
+			JSON.stringify({
+				event: "cid-mismatch",
+				did,
+				cid,
+				pds: identity.pds,
+				bytes: blob.bytes.byteLength,
+			}),
 		);
 		return errorResponse({
 			status: 502,
@@ -92,7 +157,7 @@ async function serveBlob(did: string, cid: string, config: Config): Promise<Resp
 			message: `Content type ${type.mime} is not allowed`,
 		});
 	}
-	return blobResponse(blob.bytes, { did, cid, ...type }, config);
+	return blobResponse(blob.bytes, { cid, ...type, tags }, config);
 }
 
 function withoutBody(response: Response): Response {
@@ -100,9 +165,12 @@ function withoutBody(response: Response): Response {
 }
 
 export default {
-	async fetch(request, env): Promise<Response> {
+	async fetch(request, env, ctx): Promise<Response> {
 		const url = new URL(request.url);
-		const config = loadConfig(env);
+
+		if (url.pathname.startsWith("/admin/")) {
+			return handleAdmin(request, env, ctx);
+		}
 
 		if (request.method !== "GET" && request.method !== "HEAD") {
 			return errorResponse({
@@ -138,7 +206,7 @@ export default {
 				});
 				break;
 			case "blob":
-				response = await serveBlob(path.did, path.cid, config);
+				response = await serveBlob(path.did, path.cid, env, ctx, loadConfig(env));
 				break;
 		}
 		return request.method === "HEAD" ? withoutBody(response) : response;

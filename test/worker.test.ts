@@ -1,4 +1,4 @@
-import { exports } from "cloudflare:workers";
+import { env, exports } from "cloudflare:workers";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DID, PDS, cidFor, didDocument, pngBytes, stubFetch, type FetchStub } from "./helpers.ts";
 
@@ -7,6 +7,7 @@ const PLC_HOST = "plc.directory";
 const PDS_HOST = new URL(PDS).hostname;
 
 const blob = pngBytes(4096);
+const version = `v:${env.VERSION.id}`;
 let cid: string;
 
 function json(body: unknown, status = 200): Response {
@@ -48,7 +49,7 @@ describe("blob route", () => {
 		expect(h.get("accept-ranges")).toBe("bytes");
 		expect(h.get("cache-control")).toBe("public, max-age=3600");
 		expect(h.get("cloudflare-cdn-cache-control")).toBe("max-age=31536000, immutable");
-		expect(h.get("cache-tag")).toBe(`did:${DID},cid:${cid}`);
+		expect(h.get("cache-tag")).toBe(`did:${DID},cid:${cid},${version}`);
 		expect(h.get("content-security-policy")).toBe("default-src 'none'; sandbox");
 		expect(h.get("x-content-type-options")).toBe("nosniff");
 		expect(h.get("cross-origin-resource-policy")).toBe("cross-origin");
@@ -68,7 +69,7 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${cid}`, { method: "HEAD" });
 		expect(response.status).toBe(200);
 		expect(response.headers.get("content-type")).toBe("image/png");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid}`);
+		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid},${version}`);
 		expect(await response.text()).toBe("");
 	});
 
@@ -86,7 +87,7 @@ describe("blob route", () => {
 		});
 		const response = await get(`/${did}/${cid}`);
 		expect(response.status).toBe(200);
-		expect(response.headers.get("cache-tag")).toBe(`did:${did},cid:${cid}`);
+		expect(response.headers.get("cache-tag")).toBe(`did:${did},cid:${cid},${version}`);
 	});
 
 	it("rejects bytes that do not match the CID with an uncacheable 502", async () => {
@@ -108,7 +109,7 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${svgCid}`);
 		expect(response.status).toBe(415);
 		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${svgCid}`);
+		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${svgCid},${version}`);
 		expect(response.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
 	});
 
@@ -120,7 +121,7 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${cid}`);
 		expect(response.status).toBe(413);
 		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid}`);
+		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid},${version}`);
 	});
 
 	it("returns 413 when the body outgrows the limit regardless of Content-Length", async () => {
@@ -152,7 +153,7 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${cid}`);
 		expect(response.status).toBe(404);
 		expect(response.headers.get("cache-control")).toBe("public, max-age=300");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid}`);
+		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid},${version}`);
 	});
 
 	it("returns a did-tagged short-lived 404 for an unknown DID", async () => {
@@ -160,7 +161,7 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${cid}`);
 		expect(response.status).toBe(404);
 		expect(response.headers.get("cache-control")).toBe("public, max-age=300");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID}`);
+		expect(response.headers.get("cache-tag")).toBe(`did:${DID},${version}`);
 	});
 
 	it("returns 404 when the DID document redirects", async () => {

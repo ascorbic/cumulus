@@ -7,7 +7,16 @@ export interface Config {
 	edgeMaxAge: number;
 }
 
-const DEFAULT_MIMETYPES = "image/jpeg,image/png,image/webp,image/avif,image/gif";
+export const CONFIG_DEFAULTS = {
+	BLOB_MAX_SIZE: "3mb",
+	BLOB_ALLOWED_MIMETYPES: "image/jpeg,image/png,image/webp,image/avif,image/gif",
+	BLOB_FETCH_TIMEOUT: "30s",
+	PLC_URL: "https://plc.directory",
+	BROWSER_MAX_AGE: "3600",
+	EDGE_MAX_AGE: "31536000",
+} as const;
+
+export type ConfigEnv = Partial<Record<keyof typeof CONFIG_DEFAULTS, string>>;
 
 const SIZE_UNITS: Record<string, number> = {
 	b: 1,
@@ -43,30 +52,20 @@ function parseInteger(value: string): number {
 	return Number(value);
 }
 
-export type ConfigEnv = Partial<
-	Record<
-		| "BLOB_MAX_SIZE"
-		| "BLOB_ALLOWED_MIMETYPES"
-		| "BLOB_FETCH_TIMEOUT"
-		| "PLC_URL"
-		| "BROWSER_MAX_AGE"
-		| "EDGE_MAX_AGE",
-		string
-	>
->;
-
-export function loadConfig(env: ConfigEnv): Config {
+export function loadConfig(env: object): Config {
+	const vars = env as ConfigEnv;
+	const get = (key: keyof typeof CONFIG_DEFAULTS): string => vars[key] || CONFIG_DEFAULTS[key];
 	return {
-		blobMaxSize: parseSize(env.BLOB_MAX_SIZE ?? "3mb"),
+		blobMaxSize: parseSize(get("BLOB_MAX_SIZE")),
 		allowedMimeTypes: new Set(
-			(env.BLOB_ALLOWED_MIMETYPES ?? DEFAULT_MIMETYPES)
+			get("BLOB_ALLOWED_MIMETYPES")
 				.split(",")
 				.map((type) => type.trim().toLowerCase())
 				.filter(Boolean),
 		),
-		blobFetchTimeoutMs: parseDuration(env.BLOB_FETCH_TIMEOUT ?? "30s"),
-		plcUrl: (env.PLC_URL ?? "https://plc.directory").replace(/\/+$/, ""),
-		browserMaxAge: parseInteger(env.BROWSER_MAX_AGE ?? "3600"),
-		edgeMaxAge: parseInteger(env.EDGE_MAX_AGE ?? "31536000"),
+		blobFetchTimeoutMs: parseDuration(get("BLOB_FETCH_TIMEOUT")),
+		plcUrl: get("PLC_URL").replace(/\/+$/, ""),
+		browserMaxAge: parseInteger(get("BROWSER_MAX_AGE")),
+		edgeMaxAge: parseInteger(get("EDGE_MAX_AGE")),
 	};
 }

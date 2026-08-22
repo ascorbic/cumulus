@@ -1,5 +1,5 @@
 export type BlobResult =
-	| { status: "ok"; bytes: Uint8Array; digest: Uint8Array }
+	| { status: "ok"; bytes: Uint8Array }
 	| { status: "not-found" }
 	| { status: "too-large" }
 	| { status: "upstream-error"; detail: string };
@@ -23,8 +23,9 @@ async function isBlobNotFound(response: Response): Promise<boolean> {
 }
 
 /**
- * Fetches a blob and buffers it fully while hashing. Nothing is returned until
- * every byte is in memory, so callers can verify before serving.
+ * Fetches a blob and buffers it fully, enforcing the size cap on actual bytes.
+ * Nothing is returned until every byte is in memory, so callers can verify
+ * before serving.
  */
 export async function fetchBlob(
 	pds: string,
@@ -52,11 +53,6 @@ export async function fetchBlob(
 	}
 	if (!response.body) return { status: "upstream-error", detail: "PDS returned no body" };
 
-	const digestStream = new crypto.DigestStream("SHA-256");
-	// Aborting the stream rejects `digest`; that rejection is only relevant on
-	// the success path where it is awaited.
-	digestStream.digest.catch(() => {});
-	const writer = digestStream.getWriter();
 	const reader = response.body.getReader();
 	const chunks: Uint8Array[] = [];
 	let received = 0;
@@ -67,15 +63,11 @@ export async function fetchBlob(
 			received += value.byteLength;
 			if (received > options.maxSize) {
 				await reader.cancel();
-				await writer.abort();
 				return { status: "too-large" };
 			}
 			chunks.push(value);
-			await writer.write(value);
 		}
-		await writer.close();
 	} catch (error) {
-		await writer.abort().catch(() => {});
 		return { status: "upstream-error", detail: `PDS body read failed: ${String(error)}` };
 	}
 	const bytes = new Uint8Array(received);
@@ -84,5 +76,9 @@ export async function fetchBlob(
 		bytes.set(chunk, offset);
 		offset += chunk.byteLength;
 	}
-	return { status: "ok", bytes, digest: new Uint8Array(await digestStream.digest) };
+	return { status: "ok", bytes };
+}
+
+export async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
+	return new Uint8Array(await crypto.subtle.digest("SHA-256", bytes));
 }
