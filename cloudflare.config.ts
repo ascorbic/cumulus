@@ -7,6 +7,9 @@ export default defineWorker({
 	entrypoint,
 	compatibilityDate,
 	compatibilityFlags,
+	cache: {
+		enabled: true,
+	},
 	observability: {
 		enabled: true,
 	},

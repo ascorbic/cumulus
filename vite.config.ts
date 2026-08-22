@@ -26,6 +26,12 @@ export default defineConfig({
 	},
 	fmt: {
 		useTabs: true,
-		ignorePatterns: [".cloudflare/**", ".wrangler/**", "dist/**", "worker-configuration.d.ts"],
+		ignorePatterns: [
+			".cloudflare/**",
+			".wrangler/**",
+			"dist/**",
+			"docs/**",
+			"worker-configuration.d.ts",
+		],
 	},
 });
