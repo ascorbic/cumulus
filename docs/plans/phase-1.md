@@ -84,9 +84,10 @@ checks them by hand after deploy.
 - `cache-tag` and `cloudflare-cdn-cache-control` are stripped from the
   client-facing response; `cache-control: public, max-age=3600` passes through.
   Whether the edge TTL is honoured remains the phase 2 timed experiment.
-- **Range is not sliced.** `Range: bytes=0-99` on a cold entry and on a warm
-  entry both return `200` with the full body (`HIT` on the warm entry, so the
-  Worker did not run). No `Accept-Ranges`, `206` or `Content-Range` was
-  observed. This contradicts SPEC.md §6's "free lunch" claim as currently
-  deployed; the response carries no `Accept-Ranges: bytes`, which is the first
-  thing to try.
+- **Range slicing requires `Accept-Ranges: bytes` on the Worker's response.**
+  Without it, `Range: bytes=0-99` returned `200` with the full body from cache.
+  With it (second deploy): cold `Range` request → `206` `MISS` with
+  `Content-Range: bytes 0-99/63065`; warm → `206` `HIT`; a different range,
+  a suffix range and an unsatisfiable range (`416`, `HIT`) all served from the
+  stored `200` without invoking the Worker. The docs do not state this
+  precondition.

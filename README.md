@@ -14,7 +14,7 @@ pnpm test     # run tests inside the Workers runtime
 pnpm check    # format, lint, and type check
 pnpm fix      # same, but auto-fix
 pnpm build    # production build
-pnpm deploy   # build and deploy via cf
+pnpm run deploy   # build and deploy via cf (pnpm deploy is a builtin pnpm command)
 ```
 
 ## Configuration
