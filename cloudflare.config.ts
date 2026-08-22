@@ -8,6 +8,11 @@ import { compatibilityDate, compatibilityFlags } from "./compatibility.ts";
 import { CONFIG_DEFAULTS } from "./src/config.ts";
 import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
 
+/** Deploy-time overrides come from the environment (`.env` locally). */
+function setting(key: keyof typeof CONFIG_DEFAULTS): string {
+	return process.env[key] ?? CONFIG_DEFAULTS[key];
+}
+
 export default defineWorker({
 	name: "cumulus",
 	entrypoint,
@@ -24,16 +29,16 @@ export default defineWorker({
 	env: {
 		VERSION: bindings.versionMetadata(),
 		ADMIN_PASSWORD: bindings.secret(),
-		BLOB_MAX_SIZE: bindings.text(CONFIG_DEFAULTS.BLOB_MAX_SIZE),
-		BLOB_ALLOWED_MIMETYPES: bindings.text(CONFIG_DEFAULTS.BLOB_ALLOWED_MIMETYPES),
-		BLOB_FETCH_TIMEOUT: bindings.text(CONFIG_DEFAULTS.BLOB_FETCH_TIMEOUT),
-		PLC_URL: bindings.text(CONFIG_DEFAULTS.PLC_URL),
-		BROWSER_MAX_AGE: bindings.text(CONFIG_DEFAULTS.BROWSER_MAX_AGE),
-		EDGE_MAX_AGE: bindings.text(CONFIG_DEFAULTS.EDGE_MAX_AGE),
-		POLICY_URL: bindings.text(CONFIG_DEFAULTS.POLICY_URL),
-		POLICY_FAIL_OPEN: bindings.text(CONFIG_DEFAULTS.POLICY_FAIL_OPEN),
-		LABELERS: bindings.text(CONFIG_DEFAULTS.LABELERS),
-		LABELER_FAIL_OPEN: bindings.text(CONFIG_DEFAULTS.LABELER_FAIL_OPEN),
+		BLOB_MAX_SIZE: bindings.text(setting("BLOB_MAX_SIZE")),
+		BLOB_ALLOWED_MIMETYPES: bindings.text(setting("BLOB_ALLOWED_MIMETYPES")),
+		BLOB_FETCH_TIMEOUT: bindings.text(setting("BLOB_FETCH_TIMEOUT")),
+		PLC_URL: bindings.text(setting("PLC_URL")),
+		BROWSER_MAX_AGE: bindings.text(setting("BROWSER_MAX_AGE")),
+		EDGE_MAX_AGE: bindings.text(setting("EDGE_MAX_AGE")),
+		POLICY_URL: bindings.text(setting("POLICY_URL")),
+		POLICY_FAIL_OPEN: bindings.text(setting("POLICY_FAIL_OPEN")),
+		LABELERS: bindings.text(setting("LABELERS")),
+		LABELER_FAIL_OPEN: bindings.text(setting("LABELER_FAIL_OPEN")),
 		LABELS_KV: bindings.kv(),
 	},
 	triggers: [triggers.scheduled({ schedule: "*/5 * * * *" })],
