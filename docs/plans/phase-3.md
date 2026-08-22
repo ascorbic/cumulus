@@ -87,3 +87,20 @@ actor, expect `MISS`, then by blob, then `all`; check Identity's entry is
 cold after an actor purge by timing the next miss. Confirm the cache survives
 a no-op redeploy (`crossVersionCache`), then a header-changing deploy +
 version purge cold-caches.
+
+## Deployed results (2026-08-22, versions a3eb9390 → 4f421be5)
+
+- `ctx.exports` loopbacks work in both workerd-under-vitest and production;
+  miniflare 5 alpha has no `ctx.cache`, so purge tests assert the fan-out
+  shape and auth while the deployed check covers real purges.
+- `cf deploy` refuses to upload while a declared secret is unset; set it
+  once with `cf workers secrets update ADMIN_PASSWORD --worker cumulus
+  --text …` (value kept in the gitignored `.env`).
+- Purge round-trip: warm `HIT` → `POST /admin/purge/actor/{did}` →
+  `{"success":true}` on default/Policy/Identity → next request `MISS` →
+  `HIT`. Same for `/blob/{cid}` and `/all`. Propagation was immediate at the
+  test colo.
+- Unauthenticated admin call → 401 with `WWW-Authenticate`.
+- `crossVersionCache`: a no-op redeploy (a3eb9390 → 4f421be5) left the entry
+  `HIT` on three consecutive requests. Purging tag `v:a3eb9390…` afterwards
+  cold-caches it, which is the header-change escape hatch working.
