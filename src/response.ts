@@ -10,6 +10,7 @@ const SECURITY_HEADERS = {
 	"content-security-policy": "default-src 'none'; sandbox",
 	"x-content-type-options": "nosniff",
 	"cross-origin-resource-policy": "cross-origin",
+	"access-control-allow-origin": "*",
 } as const;
 
 export function didTag(did: string): string {

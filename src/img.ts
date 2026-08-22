@@ -178,6 +178,7 @@ export async function serveImg(
 			"content-security-policy": "default-src 'none'; sandbox",
 			"x-content-type-options": "nosniff",
 			"cross-origin-resource-policy": "cross-origin",
+			"access-control-allow-origin": "*",
 		},
 	});
 }

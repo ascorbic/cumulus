@@ -140,6 +140,7 @@ Content-Disposition: inline; filename="{cid}.jpg"
 Content-Security-Policy: default-src 'none'; sandbox
 X-Content-Type-Options: nosniff
 Cross-Origin-Resource-Policy: cross-origin
+Access-Control-Allow-Origin: *             blobs are public and content-addressed; JS may read them
 ```
 
 Errors and how long they cache:

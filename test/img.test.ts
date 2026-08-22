@@ -153,6 +153,7 @@ describe("/img route", () => {
 		expect(h.get("content-disposition")).toBe(`inline; filename="${cid}.jpg"`);
 		expect(h.get("content-security-policy")).toBe("default-src 'none'; sandbox");
 		expect(h.get("accept-ranges")).toBe("bytes");
+		expect(h.get("access-control-allow-origin")).toBe("*");
 	});
 
 	it("defaults to webp and maps inside presets to contain", async () => {

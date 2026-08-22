@@ -114,6 +114,7 @@ describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 		expect(h.get("content-security-policy")).toBe("default-src 'none'; sandbox");
 		expect(h.get("x-content-type-options")).toBe("nosniff");
 		expect(h.get("cross-origin-resource-policy")).toBe("cross-origin");
+		expect(h.get("access-control-allow-origin")).toBe("*");
 		expect(h.get("content-disposition")).toMatch(
 			new RegExp(`^inline; filename="${CID}\\.[a-z]+"$`),
 		);
