@@ -18,6 +18,11 @@ extras: Bluesky-compatible [image presets](#api), a
 [scoped mode](#scoped-mode) that turns it into a private CDN for one app,
 and an [external policy service](#labels-and-moderation) hook.
 
+> **Try it:** an experimental instance runs at `https://cdn.cirrus.earth`
+> (e.g. [`/did:plc:uwbl4k3tza7eyjv3morkrld2/bafkreic4mwsbm2tmuonamj4jq4kcjofk35bwics2f4oorp57f3cdfusjwu`](https://cdn.cirrus.earth/did:plc:uwbl4k3tza7eyjv3morkrld2/bafkreic4mwsbm2tmuonamj4jq4kcjofk35bwics2f4oorp57f3cdfusjwu)).
+> It may change or disappear at any time, so don't build on it — deploy your
+> own, which takes a few minutes.
+
 ## Setup
 
 Requirements: Node 22+, pnpm, a Cloudflare account. The `cf` CLI is in
