@@ -54,10 +54,11 @@ is a bug.
 10. **Scoped-mode admission is a forward `getRecord` membership check**
     through the `Record` entrypoint; never build a reverse index of blob
     references. Open and scoped routes never coexist in one deployment.
-11. **Config values come from `loadConfig(env)`** in `src/config.ts`;
-    every setting has a default in `CONFIG_DEFAULTS` and a matching text
-    binding in `cloudflare.config.ts`. Adding a setting means touching
-    both plus the README table.
+11. **Settings are text bindings in `cloudflare.config.ts`** — that file
+    is the user-facing configuration. `loadConfig(env)` in `src/config.ts`
+    parses them, with `CONFIG_DEFAULTS` as the fallback for environments
+    that omit a binding (tests). Adding a setting means touching both plus
+    the README table. Nothing reads `process.env` at build time.
 
 ## Layout
 
@@ -74,7 +75,7 @@ src/labels.ts drain.ts    labeler config, queryLabels client, subscribeLabels dr
 src/jetstream.ts socket.ts  Jetstream drain; shared outbound-websocket reader
 src/store.ts              the only KV schema: cursors, drain status, record-level deny set
 src/config.ts             CONFIG_DEFAULTS and loadConfig
-cloudflare.config.ts      bindings, exports (per-entrypoint cache), cron; text bindings read process.env at deploy
+cloudflare.config.ts      settings (text bindings), exports (per-entrypoint cache), Images, KV, cron
 test/                     vitest inside workerd; test/integration/ runs on Node against the deployed Worker
 ```
 
@@ -82,11 +83,11 @@ test/                     vitest inside workerd; test/integration/ runs on Node 
 
 - `pnpm dev` — local dev server (real PLC/PDS, local cache semantics)
 - `pnpm test` — workerd suite; `pnpm test:deployed` — HTTP suite against
-  production (`set -a; source .env; set +a` first; it purges, so run it
+  production (reads `ADMIN_PASSWORD` from `.env`; it purges, so run it
   sparingly — the purge rate limit bites after a few runs)
 - `pnpm check` / `pnpm fix` — oxfmt + oxlint + types
 - `pnpm run deploy` — `cf deploy` (plain `pnpm deploy` is a pnpm builtin).
-  Source `.env` first; it supplies the text-binding values.
+- `pnpm admin:password` — generate the admin secret, set it, save it to `.env`.
 
 ## Testing notes
 
@@ -130,8 +131,9 @@ test/                     vitest inside workerd; test/integration/ runs on Node 
   `@cloudflare/config` — different unique symbols break type inference).
   `Env` is inferred from it; there is no generated vars list to regenerate.
 - The entrypoint import uses `with { type: "cf-worker" }`; keep that form.
-- `compatibility.ts` is shared with the vitest runtime so tests match
-  production.
+- The compatibility date appears in `cloudflare.config.ts` and
+  `vite.config.ts`; change both. `nodejs_compat` is implied by dates
+  ≥ 2026-08-04; do not add it back.
 - `vite` must stay aliased to `@voidzero-dev/vite-plus-core` and the
   `vitest` pin must match vite-plus (`pnpm exec vp toolchain`).
 - Formatting uses tabs; `.claude/docs/**` is excluded from formatting.

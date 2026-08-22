@@ -4,20 +4,13 @@ import {
 	exports,
 	triggers,
 } from "@cloudflare/vite-plugin/experimental-config";
-import { compatibilityDate, compatibilityFlags } from "./compatibility.ts";
-import { CONFIG_DEFAULTS } from "./src/config.ts";
 import * as entrypoint from "./src/index.ts" with { type: "cf-worker" };
-
-/** Deploy-time overrides come from the environment (`.env` locally). */
-function setting(key: keyof typeof CONFIG_DEFAULTS): string {
-	return process.env[key] ?? CONFIG_DEFAULTS[key];
-}
 
 export default defineWorker({
 	name: "cumulus",
 	entrypoint,
-	compatibilityDate,
-	compatibilityFlags,
+	// Keep in sync with vite.config.ts so tests run on the deployed runtime.
+	compatibilityDate: "2026-08-22",
 	cache: {
 		enabled: true,
 		crossVersionCache: true,
@@ -29,22 +22,26 @@ export default defineWorker({
 	},
 	env: {
 		VERSION: bindings.versionMetadata(),
-		ADMIN_PASSWORD: bindings.secret(),
-		BLOB_MAX_SIZE: bindings.text(setting("BLOB_MAX_SIZE")),
-		BLOB_ALLOWED_MIMETYPES: bindings.text(setting("BLOB_ALLOWED_MIMETYPES")),
-		BLOB_FETCH_TIMEOUT: bindings.text(setting("BLOB_FETCH_TIMEOUT")),
-		PLC_URL: bindings.text(setting("PLC_URL")),
-		BROWSER_MAX_AGE: bindings.text(setting("BROWSER_MAX_AGE")),
-		EDGE_MAX_AGE: bindings.text(setting("EDGE_MAX_AGE")),
-		POLICY_URL: bindings.text(setting("POLICY_URL")),
-		POLICY_FAIL_OPEN: bindings.text(setting("POLICY_FAIL_OPEN")),
-		LABELERS: bindings.text(setting("LABELERS")),
-		LABELER_FAIL_OPEN: bindings.text(setting("LABELER_FAIL_OPEN")),
-		MODE: bindings.text(setting("MODE")),
-		SCOPED_COLLECTIONS: bindings.text(setting("SCOPED_COLLECTIONS")),
-		JETSTREAM_URL: bindings.text(setting("JETSTREAM_URL")),
 		LABELS_KV: bindings.kv(),
-		...(process.env.IMAGES_ENABLED === "true" ? { IMAGES: bindings.images() } : {}),
+		// Set with `pnpm admin:password`.
+		ADMIN_PASSWORD: bindings.secret(),
+		// Remove this binding to disable the /img/ presets.
+		IMAGES: bindings.images(),
+
+		// Settings. The README's Configuration section documents each one.
+		BLOB_MAX_SIZE: bindings.text("3mb"),
+		BLOB_ALLOWED_MIMETYPES: bindings.text("image/jpeg,image/png,image/webp,image/avif,image/gif"),
+		BLOB_FETCH_TIMEOUT: bindings.text("30s"),
+		PLC_URL: bindings.text("https://plc.directory"),
+		BROWSER_MAX_AGE: bindings.text("3600"),
+		EDGE_MAX_AGE: bindings.text("31536000"),
+		LABELERS: bindings.text('[{"did":"did:plc:ar7c4by46qjdydhdevvrndac","vals":["!takedown"]}]'),
+		LABELER_FAIL_OPEN: bindings.text("true"),
+		POLICY_URL: bindings.text(""),
+		POLICY_FAIL_OPEN: bindings.text("false"),
+		MODE: bindings.text("open"),
+		SCOPED_COLLECTIONS: bindings.text(""),
+		JETSTREAM_URL: bindings.text(""),
 	},
 	triggers: [triggers.scheduled({ schedule: "*/5 * * * *" })],
 	observability: {

@@ -1,3 +1,4 @@
+import { existsSync, readFileSync } from "node:fs";
 import { beforeAll, describe, expect, it } from "vitest";
 import { decodeCborSequence } from "../../src/cbor.ts";
 
@@ -11,7 +12,15 @@ const BASE = (process.env.CUMULUS_URL ?? "https://cumulus.ascorbic.workers.dev")
 	/\/+$/,
 	"",
 );
-const PASSWORD = process.env.ADMIN_PASSWORD;
+const PASSWORD = process.env.ADMIN_PASSWORD ?? passwordFromDotenv();
+
+function passwordFromDotenv(): string | undefined {
+	if (!existsSync(".env")) return undefined;
+	const line = readFileSync(".env", "utf8")
+		.split("\n")
+		.find((entry) => entry.startsWith("ADMIN_PASSWORD="));
+	return line?.slice("ADMIN_PASSWORD=".length).trim() || undefined;
+}
 const DID = process.env.TEST_DID ?? "did:plc:uwbl4k3tza7eyjv3morkrld2";
 const CID = process.env.TEST_CID ?? "bafkreic4mwsbm2tmuonamj4jq4kcjofk35bwics2f4oorp57f3cdfusjwu";
 const MISSING_CID = "bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku";

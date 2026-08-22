@@ -21,12 +21,5 @@
 		"lib": ["es2022"],
 		"types": ["@cloudflare/vitest-plugin/types"]
 	},
-	"include": [
-		"src",
-		"test",
-		"cloudflare.config.ts",
-		"compatibility.ts",
-		"vite.config.ts",
-		"worker-configuration.d.ts"
-	]
+	"include": ["src", "test", "cloudflare.config.ts", "vite.config.ts", "worker-configuration.d.ts"]
 }

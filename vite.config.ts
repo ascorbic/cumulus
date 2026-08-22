@@ -1,7 +1,6 @@
 import { cloudflare } from "@cloudflare/vite-plugin";
 import { cloudflareTest } from "@cloudflare/vitest-plugin";
 import { defineConfig } from "vite-plus";
-import { compatibilityDate, compatibilityFlags } from "./compatibility.ts";
 import { TEST_ADMIN_PASSWORD } from "./test/constants.ts";
 
 export default defineConfig({
@@ -12,8 +11,8 @@ export default defineConfig({
 			? cloudflareTest({
 					main: "./src/index.ts",
 					miniflare: {
-						compatibilityDate,
-						compatibilityFlags,
+						// Keep in sync with cloudflare.config.ts.
+						compatibilityDate: "2026-08-22",
 						versionMetadata: "VERSION",
 						kvNamespaces: ["LABELS_KV"],
 						bindings: { ADMIN_PASSWORD: TEST_ADMIN_PASSWORD, LABELERS: "[]" },

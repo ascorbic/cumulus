@@ -7,7 +7,7 @@ against the CID before serving, enforces a MIME allowlist by sniffing, and
 applies moderation from the ATProto labeler ecosystem by purging the cache.
 
 ```
-https://your-worker.example/did:plc:ewvi7nxzyoun6zhxrhs64oiz/bafkreihdwdcefgh4dqkjv67uzcmw7ojee6xedzdetojuzjevtenxquvyku
+https://your-worker.example/did:plc:<did>/<cid>
 ```
 
 Cache hits are served by Cloudflare without running the Worker. A miss
@@ -28,8 +28,6 @@ git clone https://github.com/ascorbic/cumulus
 cd cumulus
 pnpm install
 pnpm cf auth login
-cp .env.example .env        # optional settings; see Configuration
-set -a; source .env; set +a
 pnpm run deploy
 ```
 
@@ -41,31 +39,32 @@ it with:
 pnpm admin:password
 ```
 
-This generates a random password, saves it to `.env` as `ADMIN_PASSWORD`
-(gitignored) and sets it as the Worker's secret. Run it again any time to
-rotate. Then `pnpm run deploy`.
+This generates a random password, sets it as the Worker's secret, and
+saves it to `.env` (gitignored) so you can find it later — that file holds
+nothing else. Run it again any time to rotate. Then `pnpm run deploy` again.
 
 `pnpm dev` runs it locally (real PLC directory and PDSes, local cache).
 
 ## Configuration
 
-Settings are read from the environment at deploy time and baked into the
-Worker as bindings, so `.env` is the configuration file. Quote JSON values.
+Settings are plain values in [`cloudflare.config.ts`](cloudflare.config.ts);
+edit them there and deploy. Everything except `ADMIN_PASSWORD` is
+checked in, so a clone reproduces the deployment.
 
 | Variable                 | Default                                                | Meaning                                                                                                                                                                 |
 | ------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_PASSWORD`         | (secret, required)                                     | Basic-auth password for `/admin/*`.                                                                                                                                     |
+| `ADMIN_PASSWORD`         | secret                                                 | Basic-auth password for `/admin/*`; set with `pnpm admin:password`.                                                                                                     |
 | `BLOB_MAX_SIZE`          | `3mb`                                                  | Largest blob served. 3 MB keeps a miss under the Free plan's 10 ms CPU cap; set `25mb` on Workers Paid.                                                                 |
 | `BLOB_ALLOWED_MIMETYPES` | `image/jpeg,image/png,image/webp,image/avif,image/gif` | Sniffed types that may be served. SVG is excluded on purpose: it is a script container, and serving it from a shared origin is an XSS risk even with a restrictive CSP. |
 | `BLOB_FETCH_TIMEOUT`     | `30s`                                                  | PDS and directory request timeout.                                                                                                                                      |
 | `PLC_URL`                | `https://plc.directory`                                | DID PLC directory.                                                                                                                                                      |
 | `BROWSER_MAX_AGE`        | `3600`                                                 | `Cache-Control: max-age` sent to clients.                                                                                                                               |
 | `EDGE_MAX_AGE`           | `31536000`                                             | How long Cloudflare keeps an entry. Purge, not expiry, is the takedown mechanism.                                                                                       |
-| `LABELERS`               | Bluesky moderation service, `!takedown`                | JSON array of labelers to enforce: `\'[{"did":"did:plc:…","vals":["!takedown"]}]\'`. Set `\'[]\'` to enforce nothing.                                                   |
+| `LABELERS`               | Bluesky moderation service, `!takedown`                | JSON array of labelers to enforce: `[{"did":"did:plc:…","vals":["!takedown"]}]`. `[]` enforces nothing.                                                                 |
 | `LABELER_FAIL_OPEN`      | `true`                                                 | Serve when a labeler is unreachable (the verdict is not cached).                                                                                                        |
 | `POLICY_URL`             | none                                                   | External policy service: `GET {POLICY_URL}/{did}/{cid}` → 200 allow, 403 deny.                                                                                          |
 | `POLICY_FAIL_OPEN`       | `false`                                                | Serve when the policy service is down.                                                                                                                                  |
-| `IMAGES_ENABLED`         | unset                                                  | `true` adds the Images binding and enables `/img/` presets.                                                                                                             |
+| `IMAGES`                 | on                                                     | The Images binding, which enables `/img/` presets. Delete the line to disable them.                                                                                     |
 | `MODE`                   | `open`                                                 | `scoped` restricts the proxy to blobs referenced by records in allowlisted collections.                                                                                 |
 | `SCOPED_COLLECTIONS`     | none                                                   | Scoped mode: NSIDs or prefixes, e.g. `app.example.post,app.example.*`.                                                                                                  |
 | `JETSTREAM_URL`          | none                                                   | Scoped mode: Jetstream endpoint, e.g. `wss://jetstream2.us-east.bsky.network`.                                                                                          |
@@ -91,7 +90,7 @@ Open mode:
 GET  /{did}/{cid}                          the blob
 HEAD /{did}/{cid}                          headers only, same cache entry
 GET  /metadata/{did}/{cid}                 { mime, ext, size, width, height, animated }
-GET  /img/{preset}/plain/{did}/{cid}       resized variant (IMAGES_ENABLED)
+GET  /img/{preset}/plain/{did}/{cid}       resized variant (IMAGES binding)
 GET  /img/{preset}/plain/{did}/{cid}@jpeg  …with an output format: webp (default), jpeg, png
 GET  /healthz                              200, never cached
 ```
@@ -221,7 +220,7 @@ the limit; hammering the admin API in a loop is not.
 
 ```sh
 pnpm test            # unit and Worker tests, run inside workerd
-pnpm test:deployed   # HTTP suite against the deployed Worker (needs ADMIN_PASSWORD)
+pnpm test:deployed   # HTTP suite against the deployed Worker (reads ADMIN_PASSWORD from .env)
 pnpm check           # format, lint, types
 pnpm build
 ```
