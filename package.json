@@ -15,7 +15,8 @@
 		"check": "vp check",
 		"fix": "vp check --fix",
 		"deploy": "cf deploy",
-		"test:deployed": "vp test --config vitest.deployed.config.ts"
+		"test:deployed": "vp test --config vitest.deployed.config.ts",
+		"admin:password": "node scripts/admin-password.mjs"
 	},
 	"devDependencies": {
 		"@cloudflare/vite-plugin": "^1.53.0",

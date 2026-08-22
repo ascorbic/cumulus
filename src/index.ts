@@ -262,7 +262,7 @@ export default {
 			const response = new Response(indexHtml, {
 				headers: {
 					"content-type": "text/html; charset=utf-8",
-					"cache-control": "public, max-age=3600",
+					"cache-control": "public, max-age=60",
 					"cache-tag": versionTag(env),
 					"content-security-policy": "default-src 'none'; style-src 'unsafe-inline'",
 					"x-content-type-options": "nosniff",

@@ -16,7 +16,7 @@ export default defineConfig({
 						compatibilityFlags,
 						versionMetadata: "VERSION",
 						kvNamespaces: ["LABELS_KV"],
-						bindings: { ADMIN_PASSWORD: TEST_ADMIN_PASSWORD },
+						bindings: { ADMIN_PASSWORD: TEST_ADMIN_PASSWORD, LABELERS: "[]" },
 					},
 				})
 			: cloudflare({ experimental: { newConfig: true } }),

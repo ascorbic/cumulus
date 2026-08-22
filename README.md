@@ -12,8 +12,11 @@ https://your-worker.example/did:plc:ewvi7nxzyoun6zhxrhs64oiz/bafkreihdwdcefgh4dq
 
 Cache hits are served by Cloudflare without running the Worker. A miss
 resolves the DID, checks policy, fetches the blob from the PDS, hashes it,
-sniffs it and stores it. Takedowns arrive as labels and become cache purges
-that propagate globally within seconds.
+sniffs it and stores it. Takedowns arrive as [labels](#labels-and-moderation)
+and become cache purges that propagate globally within seconds. Optional
+extras: Bluesky-compatible [image presets](#api), a
+[scoped mode](#scoped-mode) that turns it into a private CDN for one app,
+and an [external policy service](#labels-and-moderation) hook.
 
 ## Setup
 
@@ -24,18 +27,23 @@ technical preview at the time of writing.
 git clone https://github.com/ascorbic/cumulus
 cd cumulus
 pnpm install
-pnpm exec cf auth login
-cp .env.example .env        # then edit
+pnpm cf auth login
+cp .env.example .env        # optional settings; see Configuration
 set -a; source .env; set +a
 pnpm run deploy
 ```
 
-The first deploy provisions the KV namespace automatically. `ADMIN_PASSWORD`
-is a secret and must be set once on the Worker before the deploy succeeds:
+The first deploy provisions the KV namespace automatically and fails with
+"required secrets have not been set" until the admin password exists. Create
+it with:
 
 ```sh
-pnpm exec cf workers secrets update ADMIN_PASSWORD --worker cumulus --text "$ADMIN_PASSWORD"
+pnpm admin:password
 ```
+
+This generates a random password, saves it to `.env` as `ADMIN_PASSWORD`
+(gitignored) and sets it as the Worker's secret. Run it again any time to
+rotate. Then `pnpm run deploy`.
 
 `pnpm dev` runs it locally (real PLC directory and PDSes, local cache).
 
@@ -44,23 +52,23 @@ pnpm exec cf workers secrets update ADMIN_PASSWORD --worker cumulus --text "$ADM
 Settings are read from the environment at deploy time and baked into the
 Worker as bindings, so `.env` is the configuration file. Quote JSON values.
 
-| Variable                 | Default                                                | Meaning                                                                                                        |
-| ------------------------ | ------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| `ADMIN_PASSWORD`         | (secret, required)                                     | Basic-auth password for `/admin/*`.                                                                            |
-| `BLOB_MAX_SIZE`          | `3mb`                                                  | Largest blob served. 3 MB keeps a miss under the Free plan's 10 ms CPU cap; set `25mb` on Workers Paid.        |
-| `BLOB_ALLOWED_MIMETYPES` | `image/jpeg,image/png,image/webp,image/avif,image/gif` | Sniffed types that may be served. SVG is deliberately absent.                                                  |
-| `BLOB_FETCH_TIMEOUT`     | `30s`                                                  | PDS and directory request timeout.                                                                             |
-| `PLC_URL`                | `https://plc.directory`                                | DID PLC directory.                                                                                             |
-| `BROWSER_MAX_AGE`        | `3600`                                                 | `Cache-Control: max-age` sent to clients.                                                                      |
-| `EDGE_MAX_AGE`           | `31536000`                                             | How long Cloudflare keeps an entry. Purge, not expiry, is the takedown mechanism.                              |
-| `LABELERS`               | none                                                   | JSON array of labelers to enforce, e.g. `'[{"did":"did:plc:ar7c4by46qjdydhdevvrndac","vals":["!takedown"]}]'`. |
-| `LABELER_FAIL_OPEN`      | `true`                                                 | Serve when a labeler is unreachable (the verdict is not cached).                                               |
-| `POLICY_URL`             | none                                                   | External policy service: `GET {POLICY_URL}/{did}/{cid}` → 200 allow, 403 deny.                                 |
-| `POLICY_FAIL_OPEN`       | `false`                                                | Serve when the policy service is down.                                                                         |
-| `IMAGES_ENABLED`         | unset                                                  | `true` adds the Images binding and enables `/img/` presets.                                                    |
-| `MODE`                   | `open`                                                 | `scoped` restricts the proxy to blobs referenced by records in allowlisted collections.                        |
-| `SCOPED_COLLECTIONS`     | none                                                   | Scoped mode: NSIDs or prefixes, e.g. `app.example.post,app.example.*`.                                         |
-| `JETSTREAM_URL`          | none                                                   | Scoped mode: Jetstream endpoint, e.g. `wss://jetstream2.us-east.bsky.network`.                                 |
+| Variable                 | Default                                                | Meaning                                                                                                                                                                 |
+| ------------------------ | ------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ADMIN_PASSWORD`         | (secret, required)                                     | Basic-auth password for `/admin/*`.                                                                                                                                     |
+| `BLOB_MAX_SIZE`          | `3mb`                                                  | Largest blob served. 3 MB keeps a miss under the Free plan's 10 ms CPU cap; set `25mb` on Workers Paid.                                                                 |
+| `BLOB_ALLOWED_MIMETYPES` | `image/jpeg,image/png,image/webp,image/avif,image/gif` | Sniffed types that may be served. SVG is excluded on purpose: it is a script container, and serving it from a shared origin is an XSS risk even with a restrictive CSP. |
+| `BLOB_FETCH_TIMEOUT`     | `30s`                                                  | PDS and directory request timeout.                                                                                                                                      |
+| `PLC_URL`                | `https://plc.directory`                                | DID PLC directory.                                                                                                                                                      |
+| `BROWSER_MAX_AGE`        | `3600`                                                 | `Cache-Control: max-age` sent to clients.                                                                                                                               |
+| `EDGE_MAX_AGE`           | `31536000`                                             | How long Cloudflare keeps an entry. Purge, not expiry, is the takedown mechanism.                                                                                       |
+| `LABELERS`               | Bluesky moderation service, `!takedown`                | JSON array of labelers to enforce: `\'[{"did":"did:plc:…","vals":["!takedown"]}]\'`. Set `\'[]\'` to enforce nothing.                                                   |
+| `LABELER_FAIL_OPEN`      | `true`                                                 | Serve when a labeler is unreachable (the verdict is not cached).                                                                                                        |
+| `POLICY_URL`             | none                                                   | External policy service: `GET {POLICY_URL}/{did}/{cid}` → 200 allow, 403 deny.                                                                                          |
+| `POLICY_FAIL_OPEN`       | `false`                                                | Serve when the policy service is down.                                                                                                                                  |
+| `IMAGES_ENABLED`         | unset                                                  | `true` adds the Images binding and enables `/img/` presets.                                                                                                             |
+| `MODE`                   | `open`                                                 | `scoped` restricts the proxy to blobs referenced by records in allowlisted collections.                                                                                 |
+| `SCOPED_COLLECTIONS`     | none                                                   | Scoped mode: NSIDs or prefixes, e.g. `app.example.post,app.example.*`.                                                                                                  |
+| `JETSTREAM_URL`          | none                                                   | Scoped mode: Jetstream endpoint, e.g. `wss://jetstream2.us-east.bsky.network`.                                                                                          |
 
 Changing `MODE` on a running deployment must be followed by
 `POST /admin/purge/all`: entries cached under the old mode are served
@@ -71,8 +79,8 @@ without running the Worker.
 `GET /` serves [`site/index.html`](site/index.html) — a plain page saying
 what the service is, with an abuse contact pointing at Bluesky support.
 Edit it to add your own operator contact, terms or branding; it is bundled
-into the Worker at build time and cached for an hour (a deploy purges it
-via the version tag). Keep it in `site/`: an `index.html` at the repository
+into the Worker at build time and cached for a minute, so an edit is live
+within a minute of deploying. Keep it in `site/`: an `index.html` at the repository
 root is picked up as a static asset and served with different headers.
 
 ## API
@@ -153,9 +161,13 @@ is a 502, never a partial image.
 
 ## Labels and moderation
 
-With `LABELERS` set, the proxy subscribes to the labelers you name — for
-most deployments Bluesky's moderation service,
-`did:plc:ar7c4by46qjdydhdevvrndac`, with `!takedown`. Two things happen:
+The proxy subscribes to the labelers in `LABELERS`. By default that is
+Bluesky's moderation service (`did:plc:ar7c4by46qjdydhdevvrndac`) for
+`!takedown` labels — the signal Bluesky's trust-and-safety team emits when
+it removes an account or post, including for accounts on third-party PDSes
+where the label is the only record of the decision. Enforcing it means the
+proxy follows network-wide takedowns without any operator action. Two
+things happen:
 
 - **On a cache miss**, the policy check asks each labeler (`queryLabels`)
   whether the account carries an enforced label. A deny is a 403 cached for

@@ -25,7 +25,7 @@ export const CONFIG_DEFAULTS = {
 	EDGE_MAX_AGE: "31536000",
 	POLICY_URL: "",
 	POLICY_FAIL_OPEN: "false",
-	LABELERS: "",
+	LABELERS: '[{"did":"did:plc:ar7c4by46qjdydhdevvrndac","vals":["!takedown"]}]',
 	LABELER_FAIL_OPEN: "true",
 	MODE: "open",
 	SCOPED_COLLECTIONS: "",
