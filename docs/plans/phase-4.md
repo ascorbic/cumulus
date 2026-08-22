@@ -60,3 +60,14 @@ in Workers Logs by `$metadata.message` / the JSON fields.
 and static variants); metadata route contract; Policy with a stubbed
 `POLICY_URL` covering allow/deny/outage × fail-open/closed; `cfg:` tag on
 413/415 and the admin config route.
+
+## Deployed results (2026-08-22, version 7ae5a7fc)
+
+- `ctx.exports.default.fetch()` self-loopback works in workerd-under-vitest
+  and in production. `/metadata/{did}/{cid}` cold: `MISS`, JSON with
+  dimensions from the cached original (`{"mime":"image/jpeg","size":585649,
+  "width":1500,"height":500,"animated":false}`); warm: `HIT`. The original's
+  entry was reused, not re-fetched. **§8a's open question is settled: the
+  `/img/` route can loop back to `default`; no `Origin` entrypoint.**
+- `GET /admin/config` reports `{ hash, config }`; `cfg:` tag rides on 413/415.
+- Policy service contract added to SPEC.md §9.
