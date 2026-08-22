@@ -122,7 +122,7 @@ describe("/img route", () => {
 		expect(calls).toHaveLength(1);
 		expect(calls[0]!.input).toEqual(image);
 		expect(calls[0]!.transforms).toEqual([{ fit: "cover", width: 3000, height: 1000 }]);
-		expect(calls[0]!.output).toEqual({ format: "image/jpeg", anim: true });
+		expect(calls[0]!.output).toEqual({ format: "image/jpeg" });
 		const h = response.headers;
 		expect(h.get("content-type")).toBe("image/jpeg");
 		expect(h.get("cache-control")).toBe("public, max-age=3600");

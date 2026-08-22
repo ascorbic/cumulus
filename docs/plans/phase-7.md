@@ -52,3 +52,19 @@ assert preset → options mapping, format suffix handling, 301/400 cases,
 pass-through of original errors, and headers/tags. Deployed check: real
 transform of the test avatar at each preset, `MISS` → `HIT`, and a
 `purge blob` clearing both the original and the variants.
+
+## Deployed results (2026-08-22, version 1d79cbde)
+
+- `IMAGES_ENABLED=true` in `.env` adds the binding at deploy time; the
+  route 404s without it.
+- Real transforms of the 400×400 test avatar: `avatar` 1000×1000 webp,
+  `banner` 3000×1000, `feed_thumbnail` 2000×2000, `feed_fullsize` 1000×1000
+  — upscaled as bsky's `min: true` implies; `@jpeg` and `@png` encode too.
+  `MISS` → `HIT` per variant.
+- `anim: true` is only passed for webp output; the first jpeg/png attempts
+  returned 502 and succeeded after that change plus a redeploy (one later
+  jpeg failure looked transient — the route now echoes the binding's error
+  message in the 502 body so the cause is visible without log access).
+- `POST /admin/purge/blob/{cid}` cleared the variant (`MISS` next request);
+  the variant's loopback then re-cached the original, so the original's
+  following request is a `HIT` by design.

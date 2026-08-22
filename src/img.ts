@@ -63,7 +63,8 @@ export function transformOptions(preset: Preset): ImageTransform {
 }
 
 export function outputOptions(format: Format | undefined): ImageOutputOptions {
-	return { format: FORMATS[format ?? "webp"], anim: true };
+	const mime = FORMATS[format ?? "webp"];
+	return mime === "image/webp" ? { format: mime, anim: true } : { format: mime };
 }
 
 /**
@@ -107,7 +108,7 @@ export async function serveImg(
 		return errorResponse({
 			status: 502,
 			cacheControl: CACHE_CONTROL.noStore,
-			message: "Image transform failed",
+			message: `Image transform failed: ${(error as Error).message}`,
 		});
 	}
 	const bytes = new Uint8Array(await new Response(result.image()).arrayBuffer());
