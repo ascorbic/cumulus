@@ -61,6 +61,7 @@ export function blobResponse(
 			...SECURITY_HEADERS,
 			"content-type": mime,
 			"content-length": String(bytes.byteLength),
+			"accept-ranges": "bytes",
 			"cache-control": `public, max-age=${config.browserMaxAge}`,
 			"cloudflare-cdn-cache-control": `max-age=${config.edgeMaxAge}, immutable`,
 			"cache-tag": blobTags(did, cid).join(","),

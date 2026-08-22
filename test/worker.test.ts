@@ -45,6 +45,7 @@ describe("blob route", () => {
 		const h = response.headers;
 		expect(h.get("content-type")).toBe("image/png");
 		expect(h.get("content-length")).toBe("4096");
+		expect(h.get("accept-ranges")).toBe("bytes");
 		expect(h.get("cache-control")).toBe("public, max-age=3600");
 		expect(h.get("cloudflare-cdn-cache-control")).toBe("max-age=31536000, immutable");
 		expect(h.get("cache-tag")).toBe(`did:${DID},cid:${cid}`);
