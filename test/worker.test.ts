@@ -162,6 +162,21 @@ describe("blob route", () => {
 		expect(response.headers.get("cache-tag")).toBe(`did:${DID}`);
 	});
 
+	it("returns 404 when the DID document redirects", async () => {
+		useFetch({
+			"alice.example.org": (_url, init) => {
+				expect(init?.redirect).toBe("manual");
+				return new Response(null, {
+					status: 302,
+					headers: { location: "https://evil.example/did.json" },
+				});
+			},
+		});
+		const response = await get(`/did:web:alice.example.org/${cid}`);
+		expect(response.status).toBe(404);
+		expect(response.headers.get("cache-control")).toBe("public, max-age=300");
+	});
+
 	it("returns 404 for a DID document without a usable https PDS", async () => {
 		useFetch({ [PLC_HOST]: () => json(didDocument(DID, "http://10.0.0.1:3000")) });
 		const response = await get(`/${DID}/${cid}`);

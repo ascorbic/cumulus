@@ -75,12 +75,15 @@ export async function resolvePds(
 		response = await fetch(didDocumentUrl(did, options.plcUrl), {
 			headers: { accept: "application/did+ld+json, application/json" },
 			signal: AbortSignal.timeout(options.timeoutMs),
-			redirect: "error",
+			redirect: "manual",
 		});
 	} catch (error) {
 		throw new IdentityError(`DID resolution failed: ${String(error)}`);
 	}
 	if (response.status === 404 || response.status === 410) return undefined;
+	// A DID document must live at its well-known URL; following a redirect
+	// would let a did:web host point resolution anywhere.
+	if (response.status >= 300 && response.status < 400) return undefined;
 	if (!response.ok) throw new IdentityError(`DID resolution returned ${response.status}`);
 	let doc: unknown;
 	try {
