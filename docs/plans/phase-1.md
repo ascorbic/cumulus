@@ -74,3 +74,19 @@ checks them by hand after deploy.
 
 `Identity`/`Policy` entrypoints, purge endpoints, `v:{versionId}` tag and
 `crossVersionCache` (phase 3); `cfg:` tag, structured logs (phase 4).
+
+## Deployed results (2026-08-22, cumulus.ascorbic.workers.dev)
+
+- Blob: `MISS` → `HIT` → `HIT`. HEAD on the warm entry: `HIT`.
+- 301 (uppercase CID): `MISS` → `HIT`, `max-age=86400`. 404 (missing blob):
+  `MISS` → `HIT`, `max-age=300`. 400: `max-age=86400`. `/healthz` (`no-store`):
+  `BYPASS`.
+- `cache-tag` and `cloudflare-cdn-cache-control` are stripped from the
+  client-facing response; `cache-control: public, max-age=3600` passes through.
+  Whether the edge TTL is honoured remains the phase 2 timed experiment.
+- **Range is not sliced.** `Range: bytes=0-99` on a cold entry and on a warm
+  entry both return `200` with the full body (`HIT` on the warm entry, so the
+  Worker did not run). No `Accept-Ranges`, `206` or `Content-Range` was
+  observed. This contradicts SPEC.md §6's "free lunch" claim as currently
+  deployed; the response carries no `Accept-Ranges: bytes`, which is the first
+  thing to try.
