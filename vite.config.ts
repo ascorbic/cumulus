@@ -15,6 +15,10 @@ export default defineConfig({
 						compatibilityDate: "2026-08-22",
 						versionMetadata: "VERSION",
 						kvNamespaces: ["LABELS_KV"],
+						ratelimits: {
+							MISS_LIMIT_IP: { namespace_id: "1001", simple: { limit: 600, period: 60 } },
+							MISS_LIMIT_DID: { namespace_id: "1002", simple: { limit: 120, period: 60 } },
+						},
 						bindings: { ADMIN_PASSWORD: TEST_ADMIN_PASSWORD, LABELERS: "[]" },
 					},
 				})

@@ -208,6 +208,20 @@ live against the PDS, so a just-published record works immediately). A
 Jetstream drain on the same cron purges a record's URLs when it is deleted
 or updated. Presets work the same way under `/img/{preset}/r/…`.
 
+## Abuse protection
+
+Cache hits never run the Worker, so the only requests that cost anything
+are misses: each one is CPU plus a fetch from someone's PDS. Two rate
+limits apply to misses only, keyed by client IP — 600 per minute overall
+and 120 per minute per DID (the shape of a blob-enumeration attack) — and
+return an uncacheable 429 with `Retry-After`. Adjust the limits in
+`cloudflare.config.ts`. Warm traffic is never counted, so a client
+rendering a feed of cached images is unaffected.
+
+`workersDev: false` in the config keeps the `workers.dev` hostname off, so a
+zone-level WAF rate-limiting rule on your custom domain sees every
+request; one such rule guarding the overall request quota is recommended.
+
 ## Costs
 
 Workers Cache has no separate price: hits and misses both bill as Workers

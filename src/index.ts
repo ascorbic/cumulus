@@ -9,6 +9,7 @@ import { parseImgPath, serveImg } from "./img.ts";
 import { drainJetstream } from "./jetstream.ts";
 import { admit, parseScopedPath } from "./scoped.ts";
 import { parseBlobPath } from "./path.ts";
+import { enforceMissLimits } from "./ratelimit.ts";
 import {
 	CACHE_CONTROL,
 	blobResponse,
@@ -233,6 +234,11 @@ async function serveMetadata(
 	);
 }
 
+/** The DID segment of any blob-bearing route, for per-DID miss limiting. */
+function didFromPath(pathname: string): string | undefined {
+	return /\/(did:[a-z0-9]+:[^/]+)\//i.exec(pathname + "/")?.[1];
+}
+
 function withoutBody(response: Response): Response {
 	return new Response(null, response);
 }
@@ -272,6 +278,9 @@ export default {
 		}
 
 		const config = loadConfig(env);
+
+		const limited = await enforceMissLimits(request, env, didFromPath(url.pathname));
+		if (limited) return limited;
 
 		if (url.pathname.startsWith("/img/")) {
 			const img = parseImgPath(url.pathname, config.mode);

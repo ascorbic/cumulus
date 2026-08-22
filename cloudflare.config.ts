@@ -11,6 +11,8 @@ export default defineWorker({
 	entrypoint,
 	// Keep in sync with vite.config.ts so tests run on the deployed runtime.
 	compatibilityDate: "2026-08-22",
+	// Serve only from the attached custom domain so zone WAF rules see all traffic.
+	workersDev: false,
 	cache: {
 		enabled: true,
 		crossVersionCache: true,
@@ -27,6 +29,9 @@ export default defineWorker({
 		ADMIN_PASSWORD: bindings.secret(),
 		// Remove this binding to disable the /img/ presets.
 		IMAGES: bindings.images(),
+		// Cache misses per client IP, and per client IP + DID (blob enumeration).
+		MISS_LIMIT_IP: bindings.rateLimit({ namespace: "1001", simple: { limit: 600, period: 60 } }),
+		MISS_LIMIT_DID: bindings.rateLimit({ namespace: "1002", simple: { limit: 120, period: 60 } }),
 
 		// Settings. The README's Configuration section documents each one.
 		BLOB_MAX_SIZE: bindings.text("3mb"),
