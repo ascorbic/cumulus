@@ -18,6 +18,11 @@ extras: Bluesky-compatible [image presets](#api), a
 [scoped mode](#scoped-mode) that turns it into a private CDN for one app,
 and an [external policy service](#labels-and-moderation) hook.
 
+> **Try it:** an experimental instance runs at `https://cdn.cirrus.earth`
+> (e.g. [`/did:plc:uwbl4k3tza7eyjv3morkrld2/bafkreic4mwsbm2tmuonamj4jq4kcjofk35bwics2f4oorp57f3cdfusjwu`](https://cdn.cirrus.earth/did:plc:uwbl4k3tza7eyjv3morkrld2/bafkreic4mwsbm2tmuonamj4jq4kcjofk35bwics2f4oorp57f3cdfusjwu)).
+> It may change or disappear at any time, so don't build on it — deploy your
+> own, which takes a few minutes.
+
 ## Setup
 
 Requirements: Node 22+, pnpm, a Cloudflare account. The `cf` CLI is in
@@ -219,9 +224,11 @@ return an uncacheable 429 with `Retry-After`. Adjust the limits in
 `cloudflare.config.ts`. Warm traffic is never counted, so a client
 rendering a feed of cached images is unaffected.
 
-`workersDev: false` in the config keeps the `workers.dev` hostname off, so a
-zone-level WAF rate-limiting rule on your custom domain sees every
-request; one such rule guarding the overall request quota is recommended.
+Cached requests cost nothing but request quota (errors past the Free
+plan's daily allowance, $0.30 per million on Paid) and never reach a PDS.
+If your plan includes WAF rate-limiting rules, one on your custom domain
+can cap that too; `workersDev: false` in the config keeps the `workers.dev`
+hostname off so such a rule sees every request.
 
 ## Costs
 
