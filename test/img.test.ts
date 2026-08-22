@@ -60,14 +60,15 @@ function withImages(binding: ImagesBinding | undefined): () => void {
 
 describe("parseImgPath", () => {
 	it("parses canonical preset paths with optional format", () => {
-		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}`)).toEqual({
+		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}`, "open")).toMatchObject({
 			kind: "img",
 			preset: "avatar",
 			did: DID,
 			cid: CID,
 			format: undefined,
+			original: `/${DID}/${CID}`,
 		});
-		expect(parseImgPath(`/img/feed_thumbnail/plain/${DID}/${CID}@jpeg`)).toMatchObject({
+		expect(parseImgPath(`/img/feed_thumbnail/plain/${DID}/${CID}@jpeg`, "open")).toMatchObject({
 			kind: "img",
 			preset: "feed_thumbnail",
 			format: "jpeg",
@@ -75,23 +76,44 @@ describe("parseImgPath", () => {
 	});
 
 	it("redirects aliases to the canonical preset path", () => {
-		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID.toUpperCase()}`)).toEqual({
+		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID.toUpperCase()}`, "open")).toEqual({
 			kind: "redirect",
 			location: `/img/avatar/plain/${DID}/${CID}`,
 		});
-		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}@WEBP`)).toEqual({
+		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}@WEBP`, "open")).toEqual({
 			kind: "redirect",
 			location: `/img/avatar/plain/${DID}/${CID}@webp`,
 		});
 	});
 
+	it("parses scoped preset paths in scoped mode only", () => {
+		const scoped = `/img/avatar/r/${DID}/app.example.post/3k/${CID}`;
+		expect(parseImgPath(scoped, "scoped")).toMatchObject({
+			kind: "img",
+			original: `/r/${DID}/app.example.post/3k/${CID}`,
+			tags: [`did:${DID}`, `cid:${CID}`, `rec:${DID}/app.example.post/3k`],
+		});
+		expect(
+			parseImgPath(`${scoped.slice(0, -CID.length)}${CID.toUpperCase()}@png`, "scoped"),
+		).toEqual({
+			kind: "redirect",
+			location: `${scoped}@png`,
+		});
+		expect(parseImgPath(scoped, "open")).toEqual({ kind: "unknown" });
+		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}`, "scoped")).toEqual({ kind: "unknown" });
+	});
+
 	it("rejects unknown presets, formats and malformed identifiers", () => {
-		expect(parseImgPath(`/img/huge/plain/${DID}/${CID}`)).toEqual({ kind: "invalid" });
-		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}@gif`)).toEqual({ kind: "invalid" });
-		expect(parseImgPath(`/img/avatar/plain/did:plc:nope/${CID}`)).toEqual({ kind: "invalid" });
-		expect(parseImgPath(`/img/avatar/plain/${DID}`)).toEqual({ kind: "invalid" });
-		expect(parseImgPath(`/img/avatar/${DID}/${CID}`)).toEqual({ kind: "unknown" });
-		expect(parseImgPath("/img/")).toEqual({ kind: "unknown" });
+		expect(parseImgPath(`/img/huge/plain/${DID}/${CID}`, "open")).toEqual({ kind: "invalid" });
+		expect(parseImgPath(`/img/avatar/plain/${DID}/${CID}@gif`, "open")).toEqual({
+			kind: "invalid",
+		});
+		expect(parseImgPath(`/img/avatar/plain/did:plc:nope/${CID}`, "open")).toEqual({
+			kind: "invalid",
+		});
+		expect(parseImgPath(`/img/avatar/plain/${DID}`, "open")).toEqual({ kind: "invalid" });
+		expect(parseImgPath(`/img/avatar/${DID}/${CID}`, "open")).toEqual({ kind: "unknown" });
+		expect(parseImgPath("/img/", "open")).toEqual({ kind: "unknown" });
 	});
 });
 

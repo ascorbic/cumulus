@@ -1,4 +1,5 @@
 import { decodeCborSequence, type CborValue } from "./cbor.ts";
+import { frameBytes, readSocket, type Frame, type SocketOptions } from "./socket.ts";
 import { loadConfig } from "./config.ts";
 import { labelerEndpoint } from "./entrypoints/policy.ts";
 import {
@@ -37,16 +38,16 @@ export interface DrainResult {
 const BATCH = 100;
 const PURGE_TAG_LIMIT = 100;
 
-interface Frame {
+interface LabelsFrame {
 	seq: number;
 	labels: Label[];
 }
 
 async function parseFrame(
-	data: ArrayBuffer | Blob | string,
-): Promise<Frame | { info: string } | { error: string } | undefined> {
-	if (typeof data === "string") return undefined;
-	const bytes = new Uint8Array(data instanceof Blob ? await data.arrayBuffer() : data);
+	data: Frame,
+): Promise<LabelsFrame | { info: string } | { error: string } | undefined> {
+	const bytes = await frameBytes(data);
+	if (!bytes) return undefined;
 	const [header, body] = decodeCborSequence(bytes) as Array<
 		{ [key: string]: CborValue } | undefined
 	>;
@@ -64,76 +65,23 @@ async function parseFrame(
 	return { seq, labels: (body.labels as unknown[]).filter(isLabel) };
 }
 
-/**
- * Opens `subscribeLabels` and yields frames until the stream goes idle or the
- * budget elapses. Outbound websockets cannot hibernate, so the socket lives
- * only for the drain.
- */
-export async function* readStream(
+/** Yields `#labels` frames from `subscribeLabels` until idle or out of budget. */
+export async function* readLabels(
 	endpoint: string,
 	cursor: number | null,
-	{ budgetMs, idleMs, now }: Required<Pick<DrainOptions, "budgetMs" | "idleMs" | "now">>,
-): AsyncGenerator<Frame> {
+	options: SocketOptions,
+): AsyncGenerator<LabelsFrame> {
 	const url = new URL(`${endpoint}/xrpc/com.atproto.label.subscribeLabels`);
 	if (cursor !== null) url.searchParams.set("cursor", String(cursor));
-	const response = await fetch(url.href, { headers: { upgrade: "websocket" } });
-	const socket = response.webSocket;
-	if (!socket) {
-		await response.body?.cancel();
-		throw new Error(`subscribeLabels upgrade failed with ${response.status}`);
-	}
-	const queue: Array<ArrayBuffer | Blob | string> = [];
-	let wake: (() => void) | undefined;
-	let closed = false;
-	const signal = () => {
-		wake?.();
-		wake = undefined;
-	};
-	socket.addEventListener("message", (event) => {
-		queue.push(event.data as ArrayBuffer | Blob | string);
-		signal();
-	});
-	socket.addEventListener("close", () => {
-		closed = true;
-		signal();
-	});
-	socket.addEventListener("error", () => {
-		closed = true;
-		signal();
-	});
-	socket.accept();
-
-	const deadline = now() + budgetMs;
-	try {
-		for (;;) {
-			while (queue.length > 0) {
-				const frame = await parseFrame(queue.shift()!);
-				if (!frame) continue;
-				if ("error" in frame) throw new Error(`subscribeLabels error: ${frame.error}`);
-				if ("info" in frame) {
-					console.warn(JSON.stringify({ event: "labels-info", endpoint, name: frame.info }));
-					continue;
-				}
-				yield frame;
-			}
-			if (closed) return;
-			const wait = Math.min(idleMs, deadline - now());
-			if (wait <= 0) return;
-			const woke = await new Promise<boolean>((resolve) => {
-				const timer = setTimeout(() => resolve(false), wait);
-				wake = () => {
-					clearTimeout(timer);
-					resolve(true);
-				};
-			});
-			if (!woke && queue.length === 0) return;
+	for await (const raw of readSocket(url.href, options)) {
+		const frame = await parseFrame(raw);
+		if (!frame) continue;
+		if ("error" in frame) throw new Error(`subscribeLabels error: ${frame.error}`);
+		if ("info" in frame) {
+			console.warn(JSON.stringify({ event: "labels-info", endpoint, name: frame.info }));
+			continue;
 		}
-	} finally {
-		try {
-			socket.close(1000, "drain complete");
-		} catch {
-			// Already closed by the peer.
-		}
+		yield frame;
 	}
 }
 
@@ -227,7 +175,7 @@ async function drainLabeler(
 	};
 	const endpoint = await labelerEndpoint(ctx, labeler.did);
 	const work: Work = { tags: new Set(), seq: status.seq ?? 0, events: 0 };
-	for await (const frame of readStream(endpoint, status.seq, options)) {
+	for await (const frame of readLabels(endpoint, status.seq, options)) {
 		work.seq = frame.seq;
 		for (const label of frame.labels) {
 			if (label.src !== labeler.did || !labeler.vals.includes(label.val)) continue;

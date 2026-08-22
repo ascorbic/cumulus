@@ -17,7 +17,10 @@ const post = (path: string, auth = basic(TEST_ADMIN_PASSWORD)) =>
 
 interface PurgeBody {
 	success: boolean;
-	results: Record<"default" | "Policy" | "Identity", { success: boolean; errors: unknown[] }>;
+	results: Record<
+		"default" | "Policy" | "Identity" | "Record",
+		{ success: boolean; errors: unknown[] }
+	>;
 }
 
 describe("admin purge", () => {
@@ -57,7 +60,7 @@ describe("admin purge", () => {
 		expect(response.headers.get("cache-control")).toBe("no-store");
 		const body = (await response.json()) as PurgeBody;
 		expect(body.success).toBe(false);
-		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity"]);
+		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity", "Record"]);
 		for (const result of Object.values(body.results)) {
 			expect(result.success).toBe(false);
 			expect(result.errors[0]).toMatchObject({ message: expect.stringContaining("ctx.cache") });
@@ -67,13 +70,14 @@ describe("admin purge", () => {
 	it("skips Identity for a blob purge", async () => {
 		const body = (await (await post(`/admin/purge/blob/${CID}`)).json()) as PurgeBody;
 		expect(body.results.Identity).toEqual({ success: true, errors: [] });
+		expect(body.results.Record).toEqual({ success: true, errors: [] });
 		expect(body.results.default.success).toBe(false);
 		expect(body.results.Policy.success).toBe(false);
 	});
 
 	it("purges everything on every entrypoint", async () => {
 		const body = (await (await post("/admin/purge/all")).json()) as PurgeBody;
-		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity"]);
+		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity", "Record"]);
 	});
 
 	it("reports the config hash and purges it on default only", async () => {
@@ -106,15 +110,29 @@ describe("admin purge", () => {
 		);
 		expect(response.status).toBe(200);
 		expect(response.headers.get("cache-control")).toBe("no-store");
-		expect(await response.json()).toEqual({ labelers: [] });
+		expect(await response.json()).toEqual({
+			labelers: [],
+			jetstream: { cursor: null, status: null },
+		});
 		expect((await post("/admin/labels/status")).status).toBe(405);
 		expect((await post("/admin/labels/nope")).status).toBe(404);
+	});
+
+	it("purges a record tag on default and Record", async () => {
+		const body = (await (
+			await post(`/admin/purge/record/${DID}/app.example.post/3k`)
+		).json()) as PurgeBody;
+		expect(body.results.Policy).toEqual({ success: true, errors: [] });
+		expect(body.results.Identity).toEqual({ success: true, errors: [] });
+		expect(body.results.default.success).toBe(false);
+		expect(body.results.Record.success).toBe(false);
+		expect((await post(`/admin/purge/record/${DID}/app.example.post`)).status).toBe(400);
 	});
 
 	it("purges a version tag on every entrypoint", async () => {
 		const body = (await (
 			await post("/admin/purge/version/9bc2de5a-1a13-472e-b846-af6f00fec3f1")
 		).json()) as PurgeBody;
-		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity"]);
+		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity", "Record"]);
 	});
 });

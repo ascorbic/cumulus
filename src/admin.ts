@@ -1,6 +1,8 @@
 import { CID_PATTERN } from "./cid.ts";
 import { configHash, loadConfig } from "./config.ts";
 import { drain } from "./drain.ts";
+import { JETSTREAM, drainJetstream } from "./jetstream.ts";
+import { isValidCollection, isValidRkey } from "./entrypoints/record.ts";
 import { readCursor, readStatus } from "./store.ts";
 import { isValidDid } from "./path.ts";
 import {
@@ -11,6 +13,7 @@ import {
 	jsonResponse,
 	purgeEverything,
 	purgeTags,
+	recordTag,
 } from "./response.ts";
 
 function timingSafeEqualStrings(a: string, b: string): boolean {
@@ -36,7 +39,7 @@ export function isAuthorised(request: Request, password: string): boolean {
 	return timingSafeEqualStrings(decoded.slice(separator + 1), password);
 }
 
-type PurgeResults = Record<"default" | "Policy" | "Identity", CachePurgeResult>;
+type PurgeResults = Record<"default" | "Policy" | "Identity" | "Record", CachePurgeResult>;
 
 const OK: CachePurgeResult = { success: true, errors: [] };
 
@@ -84,6 +87,7 @@ async function handlePurge(
 				default: await purgeTags(ctx, tags),
 				Policy: await ctx.exports.Policy.purgeTags(tags),
 				Identity: await ctx.exports.Identity.purgeTags(tags),
+				Record: await ctx.exports.Record.purgeTags(tags),
 			});
 		}
 		case "blob": {
@@ -93,6 +97,27 @@ async function handlePurge(
 				default: await purgeTags(ctx, tags),
 				Policy: await ctx.exports.Policy.purgeTags(tags),
 				Identity: OK,
+				Record: OK,
+			});
+		}
+		case "record": {
+			const [did, collection, rkey] = (id ?? "").split("/");
+			if (
+				did === undefined ||
+				collection === undefined ||
+				rkey === undefined ||
+				!isValidDid(did) ||
+				!isValidCollection(collection) ||
+				!isValidRkey(rkey)
+			) {
+				return badRequest("Malformed record reference");
+			}
+			const tags = [recordTag(did, collection, rkey)];
+			return purgeResponse({
+				default: await purgeTags(ctx, tags),
+				Policy: OK,
+				Identity: OK,
+				Record: await ctx.exports.Record.purgeTags(tags),
 			});
 		}
 		case "version": {
@@ -103,6 +128,7 @@ async function handlePurge(
 				default: await purgeTags(ctx, tags),
 				Policy: await ctx.exports.Policy.purgeTags(tags),
 				Identity: await ctx.exports.Identity.purgeTags(tags),
+				Record: await ctx.exports.Record.purgeTags(tags),
 			});
 		}
 		case "config": {
@@ -112,6 +138,7 @@ async function handlePurge(
 				default: await purgeTags(ctx, [`cfg:${id}`]),
 				Policy: OK,
 				Identity: OK,
+				Record: OK,
 			});
 		}
 		case "all": {
@@ -120,6 +147,7 @@ async function handlePurge(
 				default: await purgeEverything(ctx),
 				Policy: await ctx.exports.Policy.purgeEverything(),
 				Identity: await ctx.exports.Identity.purgeEverything(),
+				Record: await ctx.exports.Record.purgeEverything(),
 			});
 		}
 		default:
@@ -147,11 +175,18 @@ async function handleLabelsStatus(env: Env): Promise<Response> {
 			status: await readStatus(env.LABELS_KV, labeler.did),
 		})),
 	);
-	return jsonResponse({ labelers }, { cacheControl: CACHE_CONTROL.noStore });
+	const jetstream = {
+		cursor: await readCursor(env.LABELS_KV, JETSTREAM),
+		status: await readStatus(env.LABELS_KV, JETSTREAM),
+	};
+	return jsonResponse({ labelers, jetstream }, { cacheControl: CACHE_CONTROL.noStore });
 }
 
 async function handleLabelsDrain(env: Env, ctx: ExecutionContext): Promise<Response> {
-	return jsonResponse({ results: await drain(env, ctx) }, { cacheControl: CACHE_CONTROL.noStore });
+	return jsonResponse(
+		{ results: await drain(env, ctx), jetstream: await drainJetstream(env, ctx) },
+		{ cacheControl: CACHE_CONTROL.noStore },
+	);
 }
 
 /** `/admin/*`: Basic auth against `ADMIN_PASSWORD`; absent password → 404. */
@@ -169,8 +204,9 @@ export async function handleAdmin(
 			extraHeaders: { "www-authenticate": 'Basic realm="cumulus admin"' },
 		});
 	}
-	const [, area, kind, id, ...rest] = new URL(request.url).pathname.split("/").filter(Boolean);
-	if (rest.length > 0) return notFound();
+	const [, area, kind, ...rest] = new URL(request.url).pathname.split("/").filter(Boolean);
+	const id = rest.length === 0 ? undefined : kind === "record" ? rest.join("/") : rest[0];
+	if (rest.length > 1 && kind !== "record") return notFound();
 	switch (area) {
 		case "purge":
 			if (request.method !== "POST") return methodNotAllowed("POST");

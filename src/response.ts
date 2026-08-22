@@ -20,6 +20,10 @@ export function cidTag(cid: string): string {
 	return `cid:${cid.toLowerCase()}`;
 }
 
+export function recordTag(did: string, collection: string, rkey: string): string {
+	return `rec:${did.toLowerCase()}/${collection}/${rkey}`;
+}
+
 export function blobTags(did: string, cid: string): string[] {
 	return [didTag(did), cidTag(cid)];
 }

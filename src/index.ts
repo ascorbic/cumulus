@@ -5,6 +5,8 @@ import { configHash, loadConfig, type Config } from "./config.ts";
 import { imageInfo } from "./dimensions.ts";
 import { drain } from "./drain.ts";
 import { parseImgPath, serveImg } from "./img.ts";
+import { drainJetstream } from "./jetstream.ts";
+import { admit, parseScopedPath } from "./scoped.ts";
 import { parseBlobPath } from "./path.ts";
 import {
 	CACHE_CONTROL,
@@ -20,6 +22,7 @@ import { EXTENSIONS, sniff } from "./sniff.ts";
 
 export { Identity } from "./entrypoints/identity.ts";
 export { Policy } from "./entrypoints/policy.ts";
+export { Record } from "./entrypoints/record.ts";
 
 type Resolution =
 	| { kind: "pds"; pds: string }
@@ -80,6 +83,7 @@ async function serveBlob(
 	env: Env,
 	ctx: ExecutionContext,
 	config: Config,
+	extraTags: string[] = [],
 ): Promise<Response> {
 	const log: MissLog = { event: "blob", did, cid, status: 0 };
 	let expectedDigest: Uint8Array;
@@ -96,7 +100,7 @@ async function serveBlob(
 		);
 	}
 	const version = versionTag(env);
-	const tags = [...blobTags(did, cid), version];
+	const tags = [...blobTags(did, cid), ...extraTags, version];
 
 	let started = Date.now();
 	const identity = await resolveIdentity(ctx, did);
@@ -113,7 +117,7 @@ async function serveBlob(
 			errorResponse({
 				status: 404,
 				cacheControl: CACHE_CONTROL.negative,
-				tags: [didTag(did), version],
+				tags: [didTag(did), ...extraTags, version],
 				message: "DID not found or has no PDS",
 			}),
 		);
@@ -253,8 +257,10 @@ export default {
 			return errorResponse({ status: 200, cacheControl: CACHE_CONTROL.noStore, message: "ok" });
 		}
 
+		const config = loadConfig(env);
+
 		if (url.pathname.startsWith("/img/")) {
-			const img = parseImgPath(url.pathname);
+			const img = parseImgPath(url.pathname, config.mode);
 			let response: Response;
 			switch (img.kind) {
 				case "redirect":
@@ -275,8 +281,41 @@ export default {
 					});
 					break;
 				case "img":
-					response = await serveImg(img, env, ctx, loadConfig(env));
+					response = await serveImg(img, env, ctx, config);
 					break;
+			}
+			return request.method === "HEAD" ? withoutBody(response) : response;
+		}
+
+		if (config.mode === "scoped") {
+			const scoped = parseScopedPath(url.pathname);
+			let response: Response;
+			switch (scoped.kind) {
+				case "redirect":
+					response = redirectResponse(scoped.location);
+					break;
+				case "invalid":
+					response = errorResponse({
+						status: 400,
+						cacheControl: CACHE_CONTROL.day,
+						message: "Malformed record reference or CID",
+					});
+					break;
+				case "unknown":
+					response = errorResponse({
+						status: 404,
+						cacheControl: CACHE_CONTROL.negative,
+						message: "Not found",
+					});
+					break;
+				case "scoped": {
+					const admission = await admit(scoped, env, ctx, config);
+					response =
+						admission.kind === "deny"
+							? admission.response
+							: await serveBlob(scoped.did, scoped.cid, env, ctx, config, admission.tags);
+					break;
+				}
 			}
 			return request.method === "HEAD" ? withoutBody(response) : response;
 		}
@@ -304,8 +343,8 @@ export default {
 				break;
 			case "blob":
 				response = metadata
-					? await serveMetadata(path.did, path.cid, env, ctx, loadConfig(env))
-					: await serveBlob(path.did, path.cid, env, ctx, loadConfig(env));
+					? await serveMetadata(path.did, path.cid, env, ctx, config)
+					: await serveBlob(path.did, path.cid, env, ctx, config);
 				break;
 		}
 		return request.method === "HEAD" ? withoutBody(response) : response;
@@ -313,6 +352,7 @@ export default {
 
 	async scheduled(_controller, env, ctx): Promise<void> {
 		const results = await drain(env, ctx);
-		console.log(JSON.stringify({ event: "drain", results }));
+		const jetstream = await drainJetstream(env, ctx);
+		console.log(JSON.stringify({ event: "drain", results, jetstream }));
 	},
 } satisfies ExportedHandler<Env>;

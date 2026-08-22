@@ -186,6 +186,10 @@ GET  /metadata/{did}/{cid}      blob metadata JSON (phase 4)
 POST /admin/purge/actor/{did}   auth'd purge (blobs + verdicts + identity)
 POST /admin/purge/blob/{cid}    auth'd purge
 POST /admin/purge/all           auth'd purge
+POST /admin/purge/version/{id}  auth'd purge of one Worker version's responses (§3 escape hatch)
+POST /admin/purge/config/{hash} auth'd purge of `cfg:`-tagged verdicts; GET /admin/config shows the hash
+POST /admin/purge/record/{did}/{collection}/{rkey}   auth'd `rec:` purge (scoped mode)
+POST /admin/labels/drain        auth'd: run the label (and Jetstream) drain now
 GET  /admin/labels/status       auth'd: per-labeler cursor + last drain time
 GET  /healthz                   200, no-store
 ```

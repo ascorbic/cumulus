@@ -1,7 +1,8 @@
 import { CID_PATTERN } from "./cid.ts";
 import type { Config } from "./config.ts";
 import { parseBlobPath } from "./path.ts";
-import { CACHE_CONTROL, blobTags, errorResponse, versionTag } from "./response.ts";
+import { CACHE_CONTROL, blobTags, errorResponse, recordTag, versionTag } from "./response.ts";
+import { parseScopedPath } from "./scoped.ts";
 
 /**
  * Bluesky's appview presets (packages/bsky/src/image/uri.ts). `min: true`
@@ -26,8 +27,18 @@ export type Format = keyof typeof FORMATS;
 
 const EXTENSIONS: Record<Format, string> = { webp: "webp", jpeg: "jpg", png: "png" };
 
+export interface ImgTarget {
+	preset: Preset;
+	format: Format | undefined;
+	did: string;
+	cid: string;
+	/** The original's path on this Worker, for the loopback. */
+	original: string;
+	tags: string[];
+}
+
 export type ImgPath =
-	| { kind: "img"; preset: Preset; did: string; cid: string; format: Format | undefined }
+	| ({ kind: "img" } & ImgTarget)
 	| { kind: "redirect"; location: string }
 	| { kind: "invalid" }
 	| { kind: "unknown" };
@@ -40,22 +51,64 @@ function isFormat(value: string): value is Format {
 	return Object.hasOwn(FORMATS, value);
 }
 
-/** `/img/{preset}/plain/{did}/{cid}[@{format}]`, canonical or redirected like the blob path. */
-export function parseImgPath(pathname: string): ImgPath {
-	const match = /^\/img\/([^/]+)\/plain(\/.+?)(?:@([^/@]*))?$/.exec(pathname);
+/**
+ * `/img/{preset}/plain/{did}/{cid}[@{format}]` (open mode) or
+ * `/img/{preset}/r/{did}/{collection}/{rkey}/{cid}[@{format}]` (scoped mode),
+ * canonicalised like the underlying blob path.
+ */
+export function parseImgPath(pathname: string, mode: "open" | "scoped"): ImgPath {
+	const match = /^\/img\/([^/]+)\/(plain|r)(\/.+?)(?:@([^/@]*))?$/.exec(pathname);
 	if (!match) return { kind: "unknown" };
-	const [, preset, rest, suffix] = match as unknown as [string, string, string, string | undefined];
+	const [, preset, source, rest, suffix] = match as unknown as [
+		string,
+		string,
+		"plain" | "r",
+		string,
+		string | undefined,
+	];
+	if ((mode === "open") !== (source === "plain")) return { kind: "unknown" };
 	if (!isPreset(preset)) return { kind: "invalid" };
 	const format = suffix === undefined ? undefined : suffix.toLowerCase();
 	if (format !== undefined && !isFormat(format)) return { kind: "invalid" };
-	const blob = parseBlobPath(rest);
-	if (blob.kind !== "blob" && blob.kind !== "redirect") return { kind: "invalid" };
-	const canonicalRest = blob.kind === "blob" ? rest : blob.location;
-	const canonical = `/img/${preset}/plain${canonicalRest}${format ? `@${format}` : ""}`;
+	const formatSuffix = format ? `@${format}` : "";
+
+	if (source === "plain") {
+		const blob = parseBlobPath(rest);
+		if (blob.kind !== "blob" && blob.kind !== "redirect") return { kind: "invalid" };
+		const canonicalRest = blob.kind === "blob" ? rest : blob.location;
+		const canonical = `/img/${preset}/plain${canonicalRest}${formatSuffix}`;
+		if (canonical !== pathname) return { kind: "redirect", location: canonical };
+		const [did, cid] = canonicalRest.slice(1).split("/") as [string, string];
+		if (!CID_PATTERN.test(cid)) return { kind: "invalid" };
+		return {
+			kind: "img",
+			preset,
+			format,
+			did,
+			cid,
+			original: canonicalRest,
+			tags: blobTags(did, cid),
+		};
+	}
+
+	const scoped = parseScopedPath(`/r${rest}`);
+	if (scoped.kind !== "scoped" && scoped.kind !== "redirect") return { kind: "invalid" };
+	const canonicalRest = scoped.kind === "scoped" ? `/r${rest}` : scoped.location;
+	const canonical = `/img/${preset}${canonicalRest}${formatSuffix}`;
 	if (canonical !== pathname) return { kind: "redirect", location: canonical };
-	const [did, cid] = canonicalRest.slice(1).split("/") as [string, string];
-	if (!CID_PATTERN.test(cid)) return { kind: "invalid" };
-	return { kind: "img", preset, did, cid, format };
+	if (scoped.kind !== "scoped") return { kind: "invalid" };
+	return {
+		kind: "img",
+		preset,
+		format,
+		did: scoped.did,
+		cid: scoped.cid,
+		original: canonicalRest,
+		tags: [
+			...blobTags(scoped.did, scoped.cid),
+			recordTag(scoped.did, scoped.collection, scoped.rkey),
+		],
+	};
 }
 
 export function transformOptions(preset: Preset): ImageTransform {
@@ -73,7 +126,7 @@ export function outputOptions(format: Format | undefined): ImageOutputOptions {
  * variants carry the same tags, so one purge clears original and derived.
  */
 export async function serveImg(
-	path: Extract<ImgPath, { kind: "img" }>,
+	target: ImgTarget,
 	env: Env,
 	ctx: ExecutionContext,
 	config: Config,
@@ -86,22 +139,22 @@ export async function serveImg(
 			message: "Image presets are not enabled",
 		});
 	}
-	const original = await ctx.exports.default.fetch(`http://self/${path.did}/${path.cid}`);
+	const original = await ctx.exports.default.fetch(`http://self${target.original}`);
 	if (original.status !== 200 || !original.body) return original;
-	const format = path.format ?? "webp";
+	const format = target.format ?? "webp";
 	let result: ImageTransformationResult;
 	try {
 		result = await images
 			.input(original.body)
-			.transform(transformOptions(path.preset))
-			.output(outputOptions(path.format));
+			.transform(transformOptions(target.preset))
+			.output(outputOptions(target.format));
 	} catch (error) {
 		console.error(
 			JSON.stringify({
 				event: "transform-failed",
-				did: path.did,
-				cid: path.cid,
-				preset: path.preset,
+				did: target.did,
+				cid: target.cid,
+				preset: target.preset,
 				detail: String(error),
 			}),
 		);
@@ -120,8 +173,8 @@ export async function serveImg(
 			"accept-ranges": "bytes",
 			"cache-control": `public, max-age=${config.browserMaxAge}`,
 			"cloudflare-cdn-cache-control": `max-age=${config.edgeMaxAge}, immutable`,
-			"cache-tag": [...blobTags(path.did, path.cid), versionTag(env)].join(","),
-			"content-disposition": `inline; filename="${path.cid}.${EXTENSIONS[format]}"`,
+			"cache-tag": [...target.tags, versionTag(env)].join(","),
+			"content-disposition": `inline; filename="${target.cid}.${EXTENSIONS[format]}"`,
 			"content-security-policy": "default-src 'none'; sandbox",
 			"x-content-type-options": "nosniff",
 			"cross-origin-resource-policy": "cross-origin",

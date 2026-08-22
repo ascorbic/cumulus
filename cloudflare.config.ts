@@ -25,6 +25,7 @@ export default defineWorker({
 	exports: {
 		Identity: exports.worker({ cache: { enabled: true } }),
 		Policy: exports.worker({ cache: { enabled: true } }),
+		Record: exports.worker({ cache: { enabled: true } }),
 	},
 	env: {
 		VERSION: bindings.versionMetadata(),
@@ -39,6 +40,9 @@ export default defineWorker({
 		POLICY_FAIL_OPEN: bindings.text(setting("POLICY_FAIL_OPEN")),
 		LABELERS: bindings.text(setting("LABELERS")),
 		LABELER_FAIL_OPEN: bindings.text(setting("LABELER_FAIL_OPEN")),
+		MODE: bindings.text(setting("MODE")),
+		SCOPED_COLLECTIONS: bindings.text(setting("SCOPED_COLLECTIONS")),
+		JETSTREAM_URL: bindings.text(setting("JETSTREAM_URL")),
 		LABELS_KV: bindings.kv(),
 		...(process.env.IMAGES_ENABLED === "true" ? { IMAGES: bindings.images() } : {}),
 	},

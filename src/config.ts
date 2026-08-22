@@ -11,6 +11,9 @@ export interface Config {
 	policyFailOpen: boolean;
 	labelers: LabelerConfig[];
 	labelerFailOpen: boolean;
+	mode: "open" | "scoped";
+	scopedCollections: string[];
+	jetstreamUrl: string | undefined;
 }
 
 export const CONFIG_DEFAULTS = {
@@ -24,6 +27,9 @@ export const CONFIG_DEFAULTS = {
 	POLICY_FAIL_OPEN: "false",
 	LABELERS: "",
 	LABELER_FAIL_OPEN: "true",
+	MODE: "open",
+	SCOPED_COLLECTIONS: "",
+	JETSTREAM_URL: "",
 } as const;
 
 export type ConfigEnv = Partial<Record<keyof typeof CONFIG_DEFAULTS, string>>;
@@ -73,8 +79,31 @@ function configValue(env: object, key: keyof typeof CONFIG_DEFAULTS): string {
 	return (env as ConfigEnv)[key] || CONFIG_DEFAULTS[key];
 }
 
+function parseMode(value: string): "open" | "scoped" {
+	if (value === "open" || value === "scoped") return value;
+	throw new Error(`Invalid MODE: ${value}`);
+}
+
+const COLLECTION_PATTERN = /^[a-z][a-z0-9-]*(\.[a-z0-9-]+)+(\.\*)?$/i;
+
+function parseCollections(value: string): string[] {
+	const list = value
+		.split(",")
+		.map((entry) => entry.trim())
+		.filter(Boolean);
+	for (const entry of list) {
+		if (!COLLECTION_PATTERN.test(entry)) throw new Error(`Invalid collection pattern: ${entry}`);
+	}
+	return list;
+}
+
 export function loadConfig(env: object): Config {
 	const policyUrl = configValue(env, "POLICY_URL").replace(/\/+$/, "");
+	const mode = parseMode(configValue(env, "MODE"));
+	const scopedCollections = parseCollections(configValue(env, "SCOPED_COLLECTIONS"));
+	if (mode === "scoped" && scopedCollections.length === 0) {
+		throw new Error("MODE=scoped requires SCOPED_COLLECTIONS");
+	}
 	return {
 		blobMaxSize: parseSize(configValue(env, "BLOB_MAX_SIZE")),
 		allowedMimeTypes: new Set(
@@ -91,6 +120,9 @@ export function loadConfig(env: object): Config {
 		policyFailOpen: parseBoolean(configValue(env, "POLICY_FAIL_OPEN")),
 		labelers: parseLabelers(configValue(env, "LABELERS")),
 		labelerFailOpen: parseBoolean(configValue(env, "LABELER_FAIL_OPEN")),
+		mode,
+		scopedCollections,
+		jetstreamUrl: configValue(env, "JETSTREAM_URL").replace(/\/+$/, "") || undefined,
 	};
 }
 
