@@ -21,6 +21,9 @@ export default defineConfig({
 				})
 			: cloudflare({ experimental: { newConfig: true } }),
 	],
+	test: {
+		exclude: ["test/integration/**", "node_modules/**"],
+	},
 	lint: {
 		ignorePatterns: [".cloudflare/**", ".wrangler/**", "dist/**", "worker-configuration.d.ts"],
 		options: {

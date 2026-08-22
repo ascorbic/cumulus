@@ -101,6 +101,7 @@ A standalone Cloudflare Worker built with Vite+ and the Cloudflare Vite plugin.
 
 - `pnpm dev` — start the dev server (`vp dev`; `cf dev` also works and delegates to it)
 - `pnpm test` — run tests in the Workers runtime
+- `pnpm test:deployed` — HTTP suite against the deployed Worker (needs `ADMIN_PASSWORD` in the environment; `set -a; source .env; set +a` first)
 - `pnpm check` — format check, lint, and type check in one pass (`vp check`)
 - `pnpm fix` — apply formatting and safe lint fixes
 - `pnpm build` — production build
