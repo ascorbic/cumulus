@@ -109,7 +109,9 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${svgCid}`);
 		expect(response.status).toBe(415);
 		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${svgCid},${version}`);
+		expect(response.headers.get("cache-tag")).toMatch(
+			new RegExp(`^did:${DID},cid:${svgCid},${version},cfg:[0-9a-f]{16}$`),
+		);
 		expect(response.headers.get("content-security-policy")).toBe("default-src 'none'; sandbox");
 	});
 
@@ -121,7 +123,9 @@ describe("blob route", () => {
 		const response = await get(`/${DID}/${cid}`);
 		expect(response.status).toBe(413);
 		expect(response.headers.get("cache-control")).toBe("public, max-age=86400");
-		expect(response.headers.get("cache-tag")).toBe(`did:${DID},cid:${cid},${version}`);
+		expect(response.headers.get("cache-tag")).toMatch(
+			new RegExp(`^did:${DID},cid:${cid},${version},cfg:[0-9a-f]{16}$`),
+		);
 	});
 
 	it("returns 413 when the body outgrows the limit regardless of Content-Length", async () => {

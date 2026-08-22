@@ -70,13 +70,19 @@ export function errorResponse({
 
 export function jsonResponse(
 	body: unknown,
-	{ status = 200, cacheControl, tags }: { status?: number; cacheControl: string; tags?: string[] },
+	{
+		status = 200,
+		cacheControl,
+		edgeCacheControl,
+		tags,
+	}: { status?: number; cacheControl: string; edgeCacheControl?: string; tags?: string[] },
 ): Response {
 	const headers = new Headers({
 		...SECURITY_HEADERS,
 		"content-type": "application/json",
 		"cache-control": cacheControl,
 	});
+	if (edgeCacheControl) headers.set("cloudflare-cdn-cache-control", edgeCacheControl);
 	if (tags && tags.length > 0) headers.set("cache-tag", tags.join(","));
 	return new Response(JSON.stringify(body), { status, headers });
 }

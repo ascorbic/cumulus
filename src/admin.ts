@@ -1,4 +1,5 @@
 import { CID_PATTERN } from "./cid.ts";
+import { configHash, loadConfig } from "./config.ts";
 import { isValidDid } from "./path.ts";
 import {
 	CACHE_CONTROL,
@@ -35,17 +36,107 @@ export function isAuthorised(request: Request, password: string): boolean {
 
 type PurgeResults = Record<"default" | "Policy" | "Identity", CachePurgeResult>;
 
+const OK: CachePurgeResult = { success: true, errors: [] };
+
 function notFound(): Response {
 	return errorResponse({ status: 404, cacheControl: CACHE_CONTROL.noStore, message: "Not found" });
 }
 
+function badRequest(message: string): Response {
+	return errorResponse({ status: 400, cacheControl: CACHE_CONTROL.noStore, message });
+}
+
+function methodNotAllowed(allow: string): Response {
+	return errorResponse({
+		status: 405,
+		cacheControl: CACHE_CONTROL.noStore,
+		message: "Method not allowed",
+		extraHeaders: { allow },
+	});
+}
+
+function purgeResponse(results: PurgeResults): Response {
+	const success = Object.values(results).every((result) => result.success);
+	return jsonResponse(
+		{ success, results },
+		{ status: success ? 200 : 502, cacheControl: CACHE_CONTROL.noStore },
+	);
+}
+
 /**
- * `POST /admin/purge/{actor|blob|version}/{id}` and `POST /admin/purge/all`.
  * Purges are scoped to the entrypoint that issues them, so each one fans out
  * through the other entrypoints' `purgeTags` RPC methods. The fan-out is
  * sequential and not transactional; every verdict has a finite TTL, so a
  * partial purge self-heals.
  */
+async function handlePurge(
+	ctx: ExecutionContext,
+	kind: string | undefined,
+	id: string | undefined,
+): Promise<Response> {
+	switch (kind) {
+		case "actor": {
+			if (id === undefined || !isValidDid(id)) return badRequest("Malformed DID");
+			const tags = [didTag(id)];
+			return purgeResponse({
+				default: await purgeTags(ctx, tags),
+				Policy: await ctx.exports.Policy.purgeTags(tags),
+				Identity: await ctx.exports.Identity.purgeTags(tags),
+			});
+		}
+		case "blob": {
+			if (id === undefined || !CID_PATTERN.test(id)) return badRequest("Malformed CID");
+			const tags = [cidTag(id)];
+			return purgeResponse({
+				default: await purgeTags(ctx, tags),
+				Policy: await ctx.exports.Policy.purgeTags(tags),
+				Identity: OK,
+			});
+		}
+		case "version": {
+			if (id === undefined || !/^[0-9a-f-]{36}$/.test(id))
+				return badRequest("Malformed version id");
+			const tags = [`v:${id}`];
+			return purgeResponse({
+				default: await purgeTags(ctx, tags),
+				Policy: await ctx.exports.Policy.purgeTags(tags),
+				Identity: await ctx.exports.Identity.purgeTags(tags),
+			});
+		}
+		case "config": {
+			if (id === undefined || !/^[0-9a-f]{16}$/.test(id))
+				return badRequest("Malformed config hash");
+			return purgeResponse({
+				default: await purgeTags(ctx, [`cfg:${id}`]),
+				Policy: OK,
+				Identity: OK,
+			});
+		}
+		case "all": {
+			if (id !== undefined) return notFound();
+			return purgeResponse({
+				default: await purgeEverything(ctx),
+				Policy: await ctx.exports.Policy.purgeEverything(),
+				Identity: await ctx.exports.Identity.purgeEverything(),
+			});
+		}
+		default:
+			return notFound();
+	}
+}
+
+async function handleConfig(env: Env): Promise<Response> {
+	const config = loadConfig(env);
+	return jsonResponse(
+		{
+			hash: await configHash(env),
+			config: { ...config, allowedMimeTypes: [...config.allowedMimeTypes] },
+		},
+		{ cacheControl: CACHE_CONTROL.noStore },
+	);
+}
+
+/** `/admin/*`: Basic auth against `ADMIN_PASSWORD`; absent password → 404. */
 export async function handleAdmin(
 	request: Request,
 	env: Env,
@@ -60,71 +151,17 @@ export async function handleAdmin(
 			extraHeaders: { "www-authenticate": 'Basic realm="cumulus admin"' },
 		});
 	}
-	if (request.method !== "POST") {
-		return errorResponse({
-			status: 405,
-			cacheControl: CACHE_CONTROL.noStore,
-			message: "Method not allowed",
-			extraHeaders: { allow: "POST" },
-		});
-	}
-	const segments = new URL(request.url).pathname.split("/").filter(Boolean);
-	if (segments[0] !== "admin" || segments[1] !== "purge") return notFound();
-	const [, , kind, id, ...rest] = segments;
+	const [, area, kind, id, ...rest] = new URL(request.url).pathname.split("/").filter(Boolean);
 	if (rest.length > 0) return notFound();
-
-	let results: PurgeResults;
-	switch (kind) {
-		case "actor": {
-			if (id === undefined || !isValidDid(id)) return badRequest("Malformed DID");
-			const tags = [didTag(id)];
-			results = {
-				default: await purgeTags(ctx, tags),
-				Policy: await ctx.exports.Policy.purgeTags(tags),
-				Identity: await ctx.exports.Identity.purgeTags(tags),
-			};
-			break;
-		}
-		case "blob": {
-			if (id === undefined || !CID_PATTERN.test(id)) return badRequest("Malformed CID");
-			const tags = [cidTag(id)];
-			results = {
-				default: await purgeTags(ctx, tags),
-				Policy: await ctx.exports.Policy.purgeTags(tags),
-				Identity: { success: true, errors: [] },
-			};
-			break;
-		}
-		case "version": {
-			if (id === undefined || !/^[0-9a-f-]{36}$/.test(id))
-				return badRequest("Malformed version id");
-			const tags = [`v:${id}`];
-			results = {
-				default: await purgeTags(ctx, tags),
-				Policy: await ctx.exports.Policy.purgeTags(tags),
-				Identity: await ctx.exports.Identity.purgeTags(tags),
-			};
-			break;
-		}
-		case "all": {
-			if (id !== undefined) return notFound();
-			results = {
-				default: await purgeEverything(ctx),
-				Policy: await ctx.exports.Policy.purgeEverything(),
-				Identity: await ctx.exports.Identity.purgeEverything(),
-			};
-			break;
-		}
+	switch (area) {
+		case "purge":
+			if (request.method !== "POST") return methodNotAllowed("POST");
+			return handlePurge(ctx, kind, id);
+		case "config":
+			if (kind !== undefined) return notFound();
+			if (request.method !== "GET") return methodNotAllowed("GET");
+			return handleConfig(env);
 		default:
 			return notFound();
 	}
-	const success = Object.values(results).every((result) => result.success);
-	return jsonResponse(
-		{ success, results },
-		{ status: success ? 200 : 502, cacheControl: CACHE_CONTROL.noStore },
-	);
-}
-
-function badRequest(message: string): Response {
-	return errorResponse({ status: 400, cacheControl: CACHE_CONTROL.noStore, message });
 }

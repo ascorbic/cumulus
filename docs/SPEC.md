@@ -250,7 +250,9 @@ BLOB_MAX_SIZE           default 3mb (Free-plan safe; 25mb on Paid — see §11 #
 BLOB_ALLOWED_MIMETYPES  default image/jpeg,image/png,image/webp,image/avif,image/gif
 BLOB_FETCH_TIMEOUT      default 30s
 PLC_URL                 default https://plc.directory
-POLICY_URL              optional external policy service; absent → verdict store only
+POLICY_URL              optional external policy service; absent → verdict store only.
+                        Contract: GET {POLICY_URL}/{did}/{cid} → 200 allow, 403 deny
+                        (body = reason), anything else / timeout (5s) = outage
 POLICY_FAIL_OPEN        default false (applies to POLICY_URL outages only)
 LABELERS                optional JSON: [{ "did": "did:plc:…", "vals": ["!takedown"] }]
 LABELER_FAIL_OPEN       default true (labeler outage ≠ deny; see §7a)

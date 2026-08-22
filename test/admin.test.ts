@@ -76,6 +76,28 @@ describe("admin purge", () => {
 		expect(Object.keys(body.results)).toEqual(["default", "Policy", "Identity"]);
 	});
 
+	it("reports the config hash and purges it on default only", async () => {
+		const response = await exports.default.fetch(
+			new Request(`${ORIGIN}/admin/config`, {
+				headers: { authorization: basic(TEST_ADMIN_PASSWORD) },
+			}),
+		);
+		expect(response.status).toBe(200);
+		expect(response.headers.get("cache-control")).toBe("no-store");
+		const { hash, config } = (await response.json()) as {
+			hash: string;
+			config: { blobMaxSize: number };
+		};
+		expect(hash).toMatch(/^[0-9a-f]{16}$/);
+		expect(config.blobMaxSize).toBe(3 * 1024 * 1024);
+		const body = (await (await post(`/admin/purge/config/${hash}`)).json()) as PurgeBody;
+		expect(body.results.Policy).toEqual({ success: true, errors: [] });
+		expect(body.results.Identity).toEqual({ success: true, errors: [] });
+		expect(body.results.default.success).toBe(false);
+		expect((await post("/admin/purge/config/nothex")).status).toBe(400);
+		expect((await post("/admin/config")).status).toBe(405);
+	});
+
 	it("purges a version tag on every entrypoint", async () => {
 		const body = (await (
 			await post("/admin/purge/version/9bc2de5a-1a13-472e-b846-af6f00fec3f1")

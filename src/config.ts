@@ -5,6 +5,8 @@ export interface Config {
 	plcUrl: string;
 	browserMaxAge: number;
 	edgeMaxAge: number;
+	policyUrl: string | undefined;
+	policyFailOpen: boolean;
 }
 
 export const CONFIG_DEFAULTS = {
@@ -14,6 +16,8 @@ export const CONFIG_DEFAULTS = {
 	PLC_URL: "https://plc.directory",
 	BROWSER_MAX_AGE: "3600",
 	EDGE_MAX_AGE: "31536000",
+	POLICY_URL: "",
+	POLICY_FAIL_OPEN: "false",
 } as const;
 
 export type ConfigEnv = Partial<Record<keyof typeof CONFIG_DEFAULTS, string>>;
@@ -52,20 +56,54 @@ function parseInteger(value: string): number {
 	return Number(value);
 }
 
+function parseBoolean(value: string): boolean {
+	const lower = value.trim().toLowerCase();
+	if (lower === "true" || lower === "1" || lower === "yes") return true;
+	if (lower === "false" || lower === "0" || lower === "no") return false;
+	throw new Error(`Invalid boolean: ${value}`);
+}
+
+function configValue(env: object, key: keyof typeof CONFIG_DEFAULTS): string {
+	return (env as ConfigEnv)[key] || CONFIG_DEFAULTS[key];
+}
+
 export function loadConfig(env: object): Config {
-	const vars = env as ConfigEnv;
-	const get = (key: keyof typeof CONFIG_DEFAULTS): string => vars[key] || CONFIG_DEFAULTS[key];
+	const policyUrl = configValue(env, "POLICY_URL").replace(/\/+$/, "");
 	return {
-		blobMaxSize: parseSize(get("BLOB_MAX_SIZE")),
+		blobMaxSize: parseSize(configValue(env, "BLOB_MAX_SIZE")),
 		allowedMimeTypes: new Set(
-			get("BLOB_ALLOWED_MIMETYPES")
+			configValue(env, "BLOB_ALLOWED_MIMETYPES")
 				.split(",")
 				.map((type) => type.trim().toLowerCase())
 				.filter(Boolean),
 		),
-		blobFetchTimeoutMs: parseDuration(get("BLOB_FETCH_TIMEOUT")),
-		plcUrl: get("PLC_URL").replace(/\/+$/, ""),
-		browserMaxAge: parseInteger(get("BROWSER_MAX_AGE")),
-		edgeMaxAge: parseInteger(get("EDGE_MAX_AGE")),
+		blobFetchTimeoutMs: parseDuration(configValue(env, "BLOB_FETCH_TIMEOUT")),
+		plcUrl: configValue(env, "PLC_URL").replace(/\/+$/, ""),
+		browserMaxAge: parseInteger(configValue(env, "BROWSER_MAX_AGE")),
+		edgeMaxAge: parseInteger(configValue(env, "EDGE_MAX_AGE")),
+		policyUrl: policyUrl || undefined,
+		policyFailOpen: parseBoolean(configValue(env, "POLICY_FAIL_OPEN")),
 	};
+}
+
+const configHashes = new Map<string, Promise<string>>();
+
+/**
+ * Identifies the configuration that decides 413/415 verdicts, so those
+ * cached responses can be purged by tag when the allowlist or size cap changes.
+ */
+export function configHash(env: object): Promise<string> {
+	const input = `${configValue(env, "BLOB_ALLOWED_MIMETYPES")}\n${configValue(env, "BLOB_MAX_SIZE")}`;
+	let hash = configHashes.get(input);
+	if (!hash) {
+		hash = crypto.subtle
+			.digest("SHA-256", new TextEncoder().encode(input))
+			.then((digest) =>
+				Array.from(new Uint8Array(digest).subarray(0, 8), (b) =>
+					b.toString(16).padStart(2, "0"),
+				).join(""),
+			);
+		configHashes.set(input, hash);
+	}
+	return hash;
 }

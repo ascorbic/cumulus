@@ -25,6 +25,8 @@ export default defineWorker({
 		PLC_URL: bindings.text(CONFIG_DEFAULTS.PLC_URL),
 		BROWSER_MAX_AGE: bindings.text(CONFIG_DEFAULTS.BROWSER_MAX_AGE),
 		EDGE_MAX_AGE: bindings.text(CONFIG_DEFAULTS.EDGE_MAX_AGE),
+		POLICY_URL: bindings.text(CONFIG_DEFAULTS.POLICY_URL),
+		POLICY_FAIL_OPEN: bindings.text(CONFIG_DEFAULTS.POLICY_FAIL_OPEN),
 	},
 	observability: {
 		enabled: true,
