@@ -57,7 +57,7 @@ export type ConfigEnv = Partial<
 
 export function loadConfig(env: ConfigEnv): Config {
 	return {
-		blobMaxSize: parseSize(env.BLOB_MAX_SIZE ?? "25mb"),
+		blobMaxSize: parseSize(env.BLOB_MAX_SIZE ?? "3mb"),
 		allowedMimeTypes: new Set(
 			(env.BLOB_ALLOWED_MIMETYPES ?? DEFAULT_MIMETYPES)
 				.split(",")
