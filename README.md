@@ -43,6 +43,16 @@ This generates a random password, sets it as the Worker's secret, and
 saves it to `.env` (gitignored) so you can find it later — that file holds
 nothing else. Run it again any time to rotate. Then `pnpm run deploy` again.
 
+To serve from your own hostname, attach a custom domain on a zone in the
+same account (Cloudflare creates the DNS record and certificate):
+
+```sh
+pnpm cf workers domains update --hostname cdn.example.com --service cumulus --zone-name example.com --zone-id <zone id>
+```
+
+The cache is keyed by path, not host, so the warm cache carries over and
+`workers.dev` keeps working alongside.
+
 `pnpm dev` runs it locally (real PLC directory and PDSes, local cache).
 
 ## Configuration
