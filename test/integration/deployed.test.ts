@@ -4,14 +4,11 @@ import { decodeCborSequence } from "../../src/cbor.ts";
 
 /**
  * Runs against a deployed Worker (Node runner, HTTP only):
- *   CUMULUS_URL      default https://cumulus.ascorbic.workers.dev
+ *   CUMULUS_URL      default https://cdn.cirrus.earth
  *   ADMIN_PASSWORD   required for purge sequences
  *   TEST_DID/TEST_CID a real, small, allowlisted blob
  */
-const BASE = (process.env.CUMULUS_URL ?? "https://cumulus.ascorbic.workers.dev").replace(
-	/\/+$/,
-	"",
-);
+const BASE = (process.env.CUMULUS_URL ?? "https://cdn.cirrus.earth").replace(/\/+$/, "");
 const PASSWORD = process.env.ADMIN_PASSWORD ?? passwordFromDotenv();
 
 function passwordFromDotenv(): string | undefined {

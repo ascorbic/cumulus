@@ -50,8 +50,9 @@ same account (Cloudflare creates the DNS record and certificate):
 pnpm cf workers domains update --hostname cdn.example.com --service cumulus --zone-name example.com --zone-id <zone id>
 ```
 
-The cache is keyed by path, not host, so the warm cache carries over and
-`workers.dev` keeps working alongside.
+The cache is keyed by path, not host, so the warm cache carries over. The
+config sets `workersDev: false`, so the `workers.dev` hostname is off once a
+domain is attached; remove that line to keep it.
 
 `pnpm dev` runs it locally (real PLC directory and PDSes, local cache).
 
