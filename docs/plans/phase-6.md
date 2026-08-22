@@ -64,3 +64,16 @@ noted below.
   request, `HIT` after, HEAD `HIT`, `206`/`416` from the entry, 301 aliases
   cached, taxonomy Cache-Control values, `/healthz` `BYPASS`, metadata
   `MISS` → `HIT` with the original still `HIT`.
+
+## Purge rate limit (found 2026-08-22 while re-running the suite)
+
+Running the deployed suite back-to-back (≈6 admin purges per run, each
+fanning out to four entrypoints) tripped the purge rate limit: error 1134
+"Unable to purge, rate limit reached" from Policy/Identity/Record while
+`default` still succeeded — **every entrypoint's `purge()` counts as its own
+call**, so a fan-out of N entrypoints spends N calls, and Workers Cache
+always uses the Free-tier limits. The admin routes surface this verbatim
+(`success: false`, HTTP 502). Earlier in the same window one blob purge
+reported success but the entry stayed `HIT` for >5 s, so a near-limit purge
+may also be accepted and silently delayed. The suite now polls up to 5 s
+for the `MISS` and logs the propagation latency; run it sparingly.

@@ -29,6 +29,26 @@ async function purge(kind: string): Promise<{ success: boolean }> {
 
 const status = (response: Response) => response.headers.get("cf-cache-status");
 
+/**
+ * Instant Purge propagates within milliseconds but not synchronously with the
+ * purge response; poll briefly and report how long it took.
+ */
+async function expectMissAfter(label: string, path: string): Promise<Response> {
+	const started = Date.now();
+	for (;;) {
+		const response = await get(path);
+		if (status(response) === "MISS") {
+			console.log(`${label}: MISS observed after ${Date.now() - started} ms`);
+			return response;
+		}
+		await response.arrayBuffer();
+		if (Date.now() - started > 5000) {
+			expect.fail(`${label}: no MISS within 5 s (last ${status(response)})`);
+		}
+		await new Promise((resolve) => setTimeout(resolve, 100));
+	}
+}
+
 describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 	beforeAll(async () => {
 		expect((await get("/healthz")).status).toBe(200);
@@ -36,11 +56,8 @@ describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 
 	it("blob: purge → MISS → HIT, with HEAD and Range served from the entry", async () => {
 		expect((await purge(`actor/${DID}`)).success).toBe(true);
-		const started = Date.now();
-		const first = await get(`/${DID}/${CID}`);
+		const first = await expectMissAfter("purge actor", `/${DID}/${CID}`);
 		expect(first.status).toBe(200);
-		expect(status(first)).toBe("MISS");
-		console.log(`purge → MISS observed after ${Date.now() - started} ms`);
 		const h = first.headers;
 		expect(h.get("content-type")).toMatch(/^image\//);
 		expect(h.get("cache-control")).toBe("public, max-age=3600");
@@ -77,14 +94,10 @@ describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 	it("blob purge, version purge and purge-all each cold-cache the entry", async () => {
 		await (await get(`/${DID}/${CID}`)).arrayBuffer();
 		expect((await purge(`blob/${CID}`)).success).toBe(true);
-		const afterBlob = await get(`/${DID}/${CID}`);
-		expect(status(afterBlob)).toBe("MISS");
-		await afterBlob.arrayBuffer();
+		await (await expectMissAfter("purge blob", `/${DID}/${CID}`)).arrayBuffer();
 
 		expect((await purge("all")).success).toBe(true);
-		const afterAll = await get(`/${DID}/${CID}`);
-		expect(status(afterAll)).toBe("MISS");
-		await afterAll.arrayBuffer();
+		await (await expectMissAfter("purge all", `/${DID}/${CID}`)).arrayBuffer();
 		expect(status(await get(`/${DID}/${CID}`))).toBe("HIT");
 	});
 
@@ -110,10 +123,9 @@ describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 		expect(unknown.headers.get("cache-control")).toBe("public, max-age=300");
 
 		await purge(`blob/${MISSING_CID}`);
-		const missing = await get(`/${DID}/${MISSING_CID}`);
+		const missing = await expectMissAfter("purge missing blob", `/${DID}/${MISSING_CID}`);
 		expect(missing.status).toBe(404);
 		expect(missing.headers.get("cache-control")).toBe("public, max-age=300");
-		expect(status(missing)).toBe("MISS");
 		expect(status(await get(`/${DID}/${MISSING_CID}`))).toBe("HIT");
 
 		const health = await get("/healthz");
@@ -127,9 +139,8 @@ describe.skipIf(!PASSWORD)("deployed cumulus", () => {
 
 	it("serves metadata from the cached original", async () => {
 		await purge(`blob/${CID}`);
-		const first = await get(`/metadata/${DID}/${CID}`);
+		const first = await expectMissAfter("purge blob (metadata)", `/metadata/${DID}/${CID}`);
 		expect(first.status).toBe(200);
-		expect(status(first)).toBe("MISS");
 		const body = (await first.json()) as { mime: string; size: number; width: number | null };
 		expect(body.mime).toMatch(/^image\//);
 		expect(body.size).toBeGreaterThan(0);
