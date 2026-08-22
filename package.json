@@ -22,7 +22,7 @@
 		"@cloudflare/vite-plugin": "^1.53.0",
 		"@cloudflare/vitest-plugin": "^1.0.0",
 		"@types/node": "^26.2.0",
-		"cf": "^0.6.0",
+		"cf": "^0.8.0",
 		"typescript": "^5.9.3",
 		"vite": "npm:@voidzero-dev/vite-plus-core@^0.2.9",
 		"vite-plus": "^0.2.9",
