@@ -79,3 +79,20 @@ Configure `LABELERS` with Bluesky's moderation service
 (`did:plc:ar7c4by46qjdydhdevvrndac`), deploy, trigger the cron once, and
 confirm `/admin/labels/status` shows a cursor; query a known-labelled DID
 through `/check/` and confirm the 403 path caches and purges.
+
+## Deployed results (2026-08-22, version adabe810)
+
+- `bindings.kv()` without an id auto-provisions on `cf deploy`
+  (`cumulus-labels-kv`, `c8c78d35…`); no KV CLI step needed.
+- Text bindings read deploy-time `process.env` in `cloudflare.config.ts`, so
+  `.env` (gitignored) is the operator's settings file. Shell-source it with
+  values quoted — `LABELERS='[…]'` — or the JSON loses its quotes.
+- First `POST /admin/labels/drain` against `did:plc:ar7c4by46qjdydhdevvrndac`
+  (no cursor → live from now) ran 11 s, saw one real `!takedown`, purged one
+  tag, stored seq 40830398. The second drain resumed from the cursor
+  (`?cursor=40830398`), advanced to 40830399 with zero enforced events.
+- A purged blob re-served `200 MISS` with the labeler pull on the Policy miss
+  path — no outage logged.
+- Gotcha: in workerd, binary websocket frames arrive as `Blob`, not
+  `ArrayBuffer`; the reader handles both.
+- Not done: label signature verification (stretch goal).
