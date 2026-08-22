@@ -1,0 +1,34 @@
+{
+	"name": "cumulus",
+	"version": "0.0.0",
+	"private": true,
+	"description": "ATProto blob proxy on Cloudflare Workers Cache",
+	"keywords": [],
+	"license": "MIT",
+	"author": "Matt Kane",
+	"type": "module",
+	"scripts": {
+		"dev": "vp dev",
+		"build": "vp build",
+		"preview": "vp preview",
+		"test": "vp test",
+		"check": "vp check",
+		"fix": "vp check --fix",
+		"deploy": "cf deploy"
+	},
+	"devDependencies": {
+		"@cloudflare/vite-plugin": "^1.53.0",
+		"@cloudflare/vitest-plugin": "^1.0.0",
+		"@types/node": "^26.2.0",
+		"cf": "^0.6.0",
+		"typescript": "^5.9.3",
+		"vite": "npm:@voidzero-dev/vite-plus-core@^0.2.9",
+		"vite-plus": "^0.2.9",
+		"vitest": "4.1.10",
+		"wrangler": "^4.124.0"
+	},
+	"engines": {
+		"node": ">=22"
+	},
+	"packageManager": "pnpm@10.33.4"
+}

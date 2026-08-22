@@ -1,0 +1,6 @@
+overrides:
+  vite: npm:@voidzero-dev/vite-plus-core@latest
+  vitest: 4.1.10
+onlyBuiltDependencies:
+  - esbuild
+  - workerd

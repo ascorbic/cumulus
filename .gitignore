@@ -1,0 +1,28 @@
+# build output
+dist/
+.cloudflare/
+
+# local dev state
+.wrangler/
+
+# dependencies
+node_modules/
+
+# logs
+npm-debug.log*
+pnpm-debug.log*
+
+# cf CLI project config (contains account ids)
+.cfrc
+
+# environment variables
+.env
+.env.*
+.dev.vars
+.dev.vars.*
+
+# macOS-specific files
+.DS_Store
+
+# jetbrains setting folder
+.idea/
